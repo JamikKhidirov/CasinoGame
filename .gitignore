@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.idea/
+casino.db
+casino.db-wal
+casino.db-shm
+final_test.db
+final_test.db-wal
+final_test.db-shm
+tie_check.db
+tie_check.db-wal
+tie_check.db-shm
+.env
