@@ -14,5 +14,10 @@ GAMES: dict[str, dict] = {
 GAME_EMOJIS = {g["emoji"] for g in GAMES.values()}
 
 
+def normalize_emoji(emoji: str | None) -> str:
+    """Убирает вариационные селекторы (Telegram присылает кубик как «🎲\ufe0f»)."""
+    return (emoji or "").replace("\ufe0f", "")
+
+
 def get_game(key: str) -> dict | None:
     return GAMES.get(key)

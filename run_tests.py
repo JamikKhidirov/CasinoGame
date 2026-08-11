@@ -168,6 +168,9 @@ async def test_db():
     check("донат: формат карты 4+4+4+4", _card_number_fmt("2202202045612345") == "2202 2020 4561 2345")
     check("донат: формат с пробелами", _card_number_fmt("2202 2020 4561 2345") == "2202 2020 4561 2345")
 
+    from services.games import GAMES, normalize_emoji
+    check("эмодзи: убран вариационный селектор", normalize_emoji("\U0001f3b2\ufe0f") == GAMES["dice"]["emoji"])
+
 
 async def test_rooms():
     print("ROOMS:")
@@ -355,10 +358,57 @@ async def test_broadcast():
     database.delete_banner(bid)
 
 
+class FakeMsg2:
+    """Мини-сообщение для проверки хендлеров ответа кубиком."""
+    def __init__(self, message_id, user_id, dice_value, dice_emoji):
+        self.message_id = message_id
+        self.chat = type("C", (), {"id": 1})()
+        self.from_user = type("U", (), {"id": user_id})()
+        self.dice = type("D", (), {"value": dice_value, "emoji": dice_emoji})()
+        self.reply_to_message = type("R", (), {"chat": type("C", (), {"id": 1})(), "message_id": 1})()
+        self.text = None
+        self.answers = []
+        self.bot = None
+
+    async def answer(self, text, **kw):
+        self.answers.append(text)
+
+
+async def test_dice_reply():
+    """Ответ на сообщение игры нативным кубиком (эмодзи с вариационным селектором)."""
+    print("DICE-REPLY:")
+    import config as cfg
+    cfg.DICE_ROLL_DELAY = 0.1
+    database.ensure_user(900, "dr_alice", "DR")
+    bot = FakeBot()
+    bot_room_manager.set_bot(bot)
+    from aiogram.dispatcher.event.bases import SkipHandler
+    from handlers.rooms import dice_throw, reply_join
+    from services.games import GAMES
+
+    pts = database.get_points(900)
+    room, _ = await bot_room_manager.create_room(1, 900, "dr_alice", "dice", 25)
+    await bot_room_manager.start_vs_bot(room)
+    bot.next_dice = [2]  # бот выбросит 2, у игрока 4 -> победа
+    msg = FakeMsg2(900, 900, 4, "\U0001f3b2\ufe0f")  # «🎲️» как приходит из Telegram
+    try:
+        await reply_join(msg)
+        skipped = True
+    except SkipHandler:
+        skipped = True
+    check("кубик-ответ пропущен мимо reply_join", skipped)
+    await dice_throw(msg)
+    await asyncio.sleep(2)
+    check("кубик-ответ: ход засчитан", room.moves.get(900) == 4)
+    check("кубик-ответ: игра завершена, победа", room.status == "finished" and room.winner_id == 900)
+    check("кубик-ответ: приз начислен", database.get_points(900) == pts - 25 + 50)
+
+
 async def main():
     await test_db()
     await test_rooms()
     await test_broadcast()
+    await test_dice_reply()
     print()
     if FAILED:
         print(f"ПРОВАЛЕНО: {len(FAILED)} тестов -> {FAILED}")

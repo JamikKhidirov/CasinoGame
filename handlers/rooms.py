@@ -10,7 +10,7 @@ import asyncio
 import config
 from database import add_balance, ensure_user, get_user
 from keyboards import BTN_CREATE, BTN_VSBOT, cancel_kb, games_kb, room_kb, throw_kb
-from services.games import GAME_EMOJIS, GAMES
+from services.games import GAME_EMOJIS, GAMES, normalize_emoji
 from services.rooms import bot_room_manager, find_active_room, find_room, room_manager
 from utils import fmt
 
@@ -256,7 +256,7 @@ async def dice_throw(msg: Message):
         await msg.answer("⏳ Сейчас ход другого игрока.")
         return
     g = GAMES[room.game_key]
-    if msg.dice.emoji != g["emoji"]:
+    if normalize_emoji(msg.dice.emoji) != normalize_emoji(g["emoji"]):
         await msg.answer(f"Для игры «{g['name']}» нужно бросить {g['emoji']}.")
         return
     # имитация «вращения»: пока анимация крутится, не раскрываем результат сразу
@@ -265,10 +265,12 @@ async def dice_throw(msg: Message):
     await room.manager.make_move(room, msg.from_user.id, msg.dice.value)
 
 
-@router.message(F.text.in_(GAME_EMOJIS))
+@router.message(F.text)
 async def emoji_throw(msg: Message):
     """Если игрок прислал именно эмодзи игры (без нативной анимации) — считаем ходом.
     Бот сам кидает анимированный кубик, чтобы была имитация броска."""
+    if normalize_emoji(msg.text) not in {normalize_emoji(e) for e in GAME_EMOJIS}:
+        raise SkipHandler
     room = find_active_room(msg.chat.id, msg.from_user.id)
     if not room or room.status != "playing":
         return
@@ -277,7 +279,7 @@ async def emoji_throw(msg: Message):
     if room.turn != msg.from_user.id:
         return
     g = GAMES[room.game_key]
-    if msg.text.strip() != g["emoji"]:
+    if normalize_emoji(msg.text) != normalize_emoji(g["emoji"]):
         return
     room.extra_msgs.append(msg.message_id)
     await room.manager.send_roll_and_move(room, msg.from_user.id)
