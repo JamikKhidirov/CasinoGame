@@ -11,4 +11,7 @@ final_test.db-shm
 tie_check.db
 tie_check.db-wal
 tie_check.db-shm
+reply_check*.db
+reply_check*.db-wal
+reply_check*.db-shm
 .env
