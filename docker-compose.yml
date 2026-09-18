@@ -1,0 +1,19 @@
+services:
+  bot:
+    build: .
+    image: casino-bot:latest
+    container_name: casino-bot
+    # Секреты и настройки берём из .env (файл НЕ копируется в образ)
+    env_file:
+      - .env
+    restart: unless-stopped
+    # Именованный том: Docker сам выставит права для пользователя bot
+    volumes:
+      - casino_data:/app/data
+    # Альтернатива (если нужен доступ к файлу БД снаружи):
+    #   mkdir data && - ./data:/app/data
+    stop_grace_period: 10s
+
+volumes:
+  casino_data:
+

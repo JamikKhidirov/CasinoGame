@@ -1,0 +1,32 @@
+# Git / IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Виртуальное окружение и мусор Python
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+
+# Секреты и локальная конфигурация (в образ не попадают!)
+.env
+.env.*
+!.env.example
+
+# Локальная БД и данные
+*.db
+*.db-wal
+*.db-shm
+data/
+
+# Докер-файлы, документация и тесты внутри образа не нужны
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+*.md
+run_tests.py
+
