@@ -102,11 +102,16 @@ async def admin_settings(cb: CallbackQuery):
     rows = []
     text = "⚙️ <b>Настройки</b>\n\nНажмите на параметр, чтобы изменить:\n"
     for key, (label, default) in config.SETTINGS.items():
-        current = saved.get(key, getattr(config, key, None))
-        if isinstance(default, str):
-            display = fmt(current)
+        current = saved.get(key, getattr(config, key, default))
+        if current is None:
+            display = "—"
+        elif isinstance(default, str):
+            display = esc(str(current))
         else:
-            display = fmt(int(current)) if str(current).lstrip("-").isdigit() else current
+            try:
+                display = fmt(int(current))
+            except (TypeError, ValueError):
+                display = str(current)
         text += f"\n• {label}: <b>{display}</b>"
         rows.append([InlineKeyboardButton(text=f"✏️ {label}", callback_data=f"admin:set:{key}")])
     rows.append([InlineKeyboardButton(text="↩️ Назад", callback_data="admin:menu")])

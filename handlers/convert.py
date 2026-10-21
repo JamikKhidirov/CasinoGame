@@ -100,10 +100,11 @@ async def convert_amount(msg: Message, state: FSMContext):
         await state.clear()
         change_balance(msg.from_user.id, -amount, "convert", "Обмен на очки (💰 → ⭐)")
         change_points(msg.from_user.id, points, "convert", "Обмен из баланса (💰 → ⭐)")
+        user = get_user(msg.from_user.id)
         await msg.answer(
             f"✅ <b>Обмен выполнен!</b>\n\n"
             f"<blockquote><b>-{fmt(amount)}</b> 💰 → <b>+{fmt(points)}</b> ⭐</blockquote>\n"
-            f"Ваши очки: <b>{fmt(user['points'] + points)}</b> ⭐"
+            f"Ваши очки: <b>{fmt(user['points'])}</b> ⭐"
         )
     else:
         if amount > user["points"]:
@@ -116,8 +117,9 @@ async def convert_amount(msg: Message, state: FSMContext):
         await state.clear()
         change_points(msg.from_user.id, -amount, "convert", "Обмен на баланс (⭐ → 💰)")
         change_balance(msg.from_user.id, balance, "convert", "Обмен из очков (⭐ → 💰)")
+        user = get_user(msg.from_user.id)
         await msg.answer(
             f"✅ <b>Обмен выполнен!</b>\n\n"
             f"<blockquote><b>-{fmt(amount)}</b> ⭐ → <b>+{fmt(balance)}</b> 💰</blockquote>\n"
-            f"Ваш баланс: <b>{fmt(user['balance'] + balance)}</b> 💰"
+            f"Ваш баланс: <b>{fmt(user['balance'])}</b> 💰"
         )

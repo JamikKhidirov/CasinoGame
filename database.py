@@ -336,20 +336,13 @@ def claim_promocode(code: str, user_id: int) -> str:
         if used:
             return "already"
         conn.execute(
-            "INSERT INTO promo_uses (code, user_id, created_at) VALUES (?, ?, ?)",
+            "UPDATE promo_uses (code, user_id, created_at) VALUES (?, ?, ?)",
             (code, user_id, int(time.time())),
         )
         conn.execute(
             "UPDATE promocodes SET used_count = used_count + 1 WHERE code=?", (code,)
         )
-        conn.execute(
-            "UPDATE users SET balance = balance + ? WHERE id=?", (pc["amount"], user_id)
-        )
-        conn.execute(
-            "INSERT INTO transactions (user_id, amount, type, description, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (user_id, pc["amount"], "promo", f"Промокод {code}", int(time.time())),
-        )
+        add_balance(user_id, pc["amount"], "promo", f"Промокод {code}")
         conn.commit()
         return "ok"
 
