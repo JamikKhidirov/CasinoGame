@@ -8,9 +8,18 @@ from aiogram.types import BotCommand, BotCommandScopeChat
 
 import config
 from database import get_due_banners, init_db
-from handlers import admin, banner, common, convert, deposit, promo, rooms, start, transfer, withdraw
-from services.banners import broadcast_banner
-from services.rooms import bot_room_manager, room_manager
+from handlers_admin import router as admin_router
+from handlers_banner import router as banner_router
+from handlers_common import router as common_router
+from handlers_convert import router as convert_router
+from handlers_deposit import router as deposit_router
+from handlers_promo import router as promo_router
+from handlers_rooms import router as rooms_router
+from handlers_start import router as start_router
+from handlers_transfer import router as transfer_router
+from handlers_withdraw import router as withdraw_router
+from services_banners import broadcast_banner
+from services_rooms import bot_room_manager, room_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -90,16 +99,16 @@ async def main():
         logger.exception("Ошибка при обработке update %s: %s", update, exception)
 
     # порядок важен: common (глобальная отмена) идёт первым
-    dp.include_router(common.router)
-    dp.include_router(start.router)
-    dp.include_router(rooms.router)
-    dp.include_router(convert.router)
-    dp.include_router(deposit.router)
-    dp.include_router(promo.router)
-    dp.include_router(withdraw.router)
-    dp.include_router(transfer.router)
-    dp.include_router(banner.router)
-    dp.include_router(admin.router)
+    dp.include_router(common_router)
+    dp.include_router(start_router)
+    dp.include_router(rooms_router)
+    dp.include_router(convert_router)
+    dp.include_router(deposit_router)
+    dp.include_router(promo_router)
+    dp.include_router(withdraw_router)
+    dp.include_router(transfer_router)
+    dp.include_router(banner_router)
+    dp.include_router(admin_router)
 
     await setup_commands(bot)
     await bot.delete_webhook(drop_pending_updates=True)

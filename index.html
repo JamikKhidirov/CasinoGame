@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎰 Casino Game — Играй с друзьями онлайн</title>
+  <meta name="telegram-bot-api-version" content="6.1">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Встроенные критические стили для быстрого рендера */
+    :root {
+      --glass-bg: rgba(255, 255, 255, 0.05);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      --primary: #3b82f6;
+      --accent: #8b5cf6;
+      --danger: #ef4444;
+      --success: #10b981;
+    }
+  </style>
+</head>
+<body>
+  <!-- Telegram Mini App Header -->
+  <div id="tma-header" class="tma-header hidden">
+    <div class="tma-header-content">
+      <button class="tma-back-btn" onclick="window.Telegram.WebApp?.MainButton.hide()">
+        ←
+      </button>
+      <h1>🎰 Casino Game</h1>
+      <div class="tma-user-balance" id="tma-balance">💰 0</div>
+    </div>
+  </div>
+
+  <!-- Настройки Telegram WebApp -->
+  <script>
+    if (window.Telegram?.WebApp) {
+      const twa = window.Telegram.WebApp;
+      twa.ready();
+      twa.expand();
+      twa.setHeaderColor("#0f172a");
+      twa.setBackgroundColor("#0f172a");
+      
+      document.getElementById("tma-header").classList.remove("hidden");
+      
+      // Balance from TWA init data
+      const initData = twa.initDataUnsafe;
+      if (initData.user) {
+        document.getElementById("tma-balance").textContent = `💰 ${initData.user.id}`;
+      }
+    }
+  </script>
+
+  <div class="app-container">
+    <!-- Hero Section -->
+    <section class="hero glass-card">
+      <div class="hero-content">
+        <div class="hero-badge">🎮 НОВАЯ ИГРА</div>
+        <h1>Casino <span class="gradient-text">Game</span></h1>
+        <p class="hero-description">
+          Играй в блэкджек, дурака и кости с друзьями в реальном времени.<br>
+          Поддерживает 2-4 игрока, реферальную систему и ежедневный бонус.
+        </p>
+        
+        <div class="hero-actions">
+          <button class="btn btn-primary btn-large" onclick="app.createRoom('blackjack')">
+            🃏 Блэкджек 21
+          </button>
+          <button class="btn btn-secondary btn-large" onclick="app.createRoom('durak')">
+            ♠️ Дурак
+          </button>
+          <button class="btn btn-accent btn-large" onclick="app.createRoom('dice')">
+            🎲 Кости
+          </button>
+        </div>
+
+        <div class="features-grid">
+          <div class="feature-item glass-card">
+            <div class="feature-icon">👥</div>
+            <div class="feature-text">
+              <strong>2-4 Игрока</strong><br>
+              Играйте вместе в одной комнате
+            </div>
+          </div>
+          <div class="feature-item glass-card">
+            <div class="feature-icon">⚡</div>
+            <div class="feature-text">
+              <strong>Реальное время</strong><br>
+              Socket.io мультиплеер
+            </div>
+          </div>
+          <div class="feature-item glass-card">
+            <div class="feature-icon">🎁</div>
+            <div class="feature-text">
+              <strong>Ежедневный бонус</strong><br>
+              +500 монет каждые 24 часа
+            </div>
+          </div>
+          <div class="feature-item glass-card">
+            <div class="feature-icon">👥</div>
+            <div class="feature-text">
+              <strong>Рефералы</strong><br>
+              Бонус за приглашённых друзей
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Active Rooms -->
+    <section class="rooms-section glass-card">
+      <div class="section-header">
+        <h2>🔥 Активные комнаты</h2>
+        <button class="btn btn-outline" onclick="app.refreshRooms()">Обновить</button>
+      </div>
+      <div class="rooms-grid" id="roomsGrid">
+        <!-- Rooms injected here -->
+        <div class="empty-rooms">Комнат пока нет. Создай свою!</div>
+      </div>
+    </section>
+
+    <!-- Quick Join -->
+    <section class="quick-join glass-card">
+      <div class="section-header">
+        <h2>⚡ Быстрый вход</h2>
+      </div>
+      <div class="quick-join-form">
+        <input type="text" id="roomJoinInput" placeholder="ID комнаты (например: A1B2C3D4)">
+        <input type="text" id="playerNameInput" placeholder="Ваше имя">
+        <button class="btn btn-primary" onclick="app.joinRoom()">Войти в комнату</button>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div class="footer-links">
+        <a href="/admin.html" class="footer-link">🛠 Админ-панель</a>
+        <a href="#" class="footer-link">📊 Статистика</a>
+        <a href="#" class="footer-link">❓ Помощь</a>
+      </div>
+      <div class="footer-copy">
+        Casino Game &copy; 2024. Игра на виртуальные монеты.
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

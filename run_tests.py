@@ -9,8 +9,8 @@ if os.path.exists("final_test.db"):
     os.remove("final_test.db")
 
 import database
-from services.banners import broadcast_banner
-from services.rooms import BOT_ID, bot_room_manager, room_manager
+from services_banners import broadcast_banner
+from services_rooms import BOT_ID, bot_room_manager, room_manager
 
 PASSED = 0
 FAILED = []
@@ -164,11 +164,11 @@ async def test_db():
     check("баннер удалён", database.get_banner(bid) is None)
     check("список пользователей", set(database.get_all_user_ids()) == {1, 2, 3, 4})
 
-    from handlers.transfer import _card_number_fmt
+    from handlers_transfer import _card_number_fmt
     check("донат: формат карты 4+4+4+4", _card_number_fmt("2202202045612345") == "2202 2020 4561 2345")
     check("донат: формат с пробелами", _card_number_fmt("2202 2020 4561 2345") == "2202 2020 4561 2345")
 
-    from services.games import GAMES, normalize_emoji
+    from services_games import GAMES, normalize_emoji
     check("эмодзи: убран вариационный селектор", normalize_emoji("\U0001f3b2\ufe0f") == GAMES["dice"]["emoji"])
 
 
@@ -383,8 +383,8 @@ async def test_dice_reply():
     bot = FakeBot()
     bot_room_manager.set_bot(bot)
     from aiogram.dispatcher.event.bases import SkipHandler
-    from handlers.rooms import dice_throw, reply_join
-    from services.games import GAMES
+    from handlers_rooms import dice_throw, reply_join
+    from services_games import GAMES
 
     pts = database.get_points(900)
     room, _ = await bot_room_manager.create_room(1, 900, "dr_alice", "dice", 25)

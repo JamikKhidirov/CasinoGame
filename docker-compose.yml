@@ -1,19 +1,23 @@
+version: "3.8"
 services:
-  bot:
+  casino:
     build: .
-    image: casino-bot:latest
-    container_name: casino-bot
-    # Секреты и настройки берём из .env (файл НЕ копируется в образ)
+    image: casino-game:latest
+    container_name: casino-game
     env_file:
       - .env
     restart: unless-stopped
-    # Именованный том: Docker сам выставит права для пользователя bot
+    ports:
+      - "3000:3000"
     volumes:
       - casino_data:/app/data
-    # Альтернатива (если нужен доступ к файлу БД снаружи):
-    #   mkdir data && - ./data:/app/data
     stop_grace_period: 10s
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 volumes:
   casino_data:
-

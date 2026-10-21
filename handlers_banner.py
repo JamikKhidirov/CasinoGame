@@ -12,7 +12,7 @@ from database import (
     set_banner_enabled,
 )
 from keyboards import admin_back_kb, cancel_kb
-from services.banners import broadcast_banner
+from services_banners import broadcast_banner
 from utils import esc, fmt
 
 router = Router()

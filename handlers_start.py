@@ -20,7 +20,7 @@ from keyboards import (
     BTN_TOP,
     main_kb,
 )
-from services.games import GAMES
+from services_games import GAMES
 from utils import esc, fmt, fmt_ts, type_name
 
 router = Router()

@@ -24,7 +24,7 @@ from database import (
     set_setting,
 )
 from keyboards import admin_back_kb, admin_kb
-from services.rooms import room_manager
+from services_rooms import room_manager
 from utils import esc, fmt, fmt_ts, type_name
 
 router = Router()
