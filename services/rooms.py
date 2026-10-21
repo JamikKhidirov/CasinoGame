@@ -19,7 +19,15 @@ import random
 import uuid
 
 import config
-from database import add_balance, add_points, deduct, deduct_points, record_game
+from database import (
+    add_balance,
+    add_points,
+    deduct,
+    deduct_points,
+    get_user,
+    pay_referral_bonus,
+    record_game,
+)
 from keyboards import room_kb, throw_kb
 from services.games import GAMES
 from utils import esc, fmt
@@ -228,6 +236,13 @@ class RoomManager:
             else:
                 add_balance(user_id, room.bet, "refund", f"Ошибка входа в комнату {room.room_id}")
             raise
+        # реферальный бонус за первую ставку приглашённого
+        try:
+            user_row = get_user(user_id)
+            if user_row and user_row.get("referrer_id"):
+                pay_referral_bonus(user_row["referrer_id"], user_id, room.bet)
+        except Exception:
+            pass
         return True, None
 
     # ---------- игровой цикл ----------

@@ -28,7 +28,9 @@ def init_db() -> None:
                 first_name TEXT,
                 balance INTEGER NOT NULL DEFAULT 0,
                 points INTEGER NOT NULL DEFAULT 0,
-                created_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL,
+                last_daily INTEGER NOT NULL DEFAULT 0,
+                referrer_id INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS transactions (
@@ -127,6 +129,26 @@ def init_db() -> None:
         if "points" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN points INTEGER NOT NULL DEFAULT 0")
             conn.commit()
+        if "last_daily" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN last_daily INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+        if "referrer_id" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER")
+            conn.commit()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS referrals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    referrer_id INTEGER NOT NULL,
+                    referred_id INTEGER NOT NULL UNIQUE,
+                    created_at INTEGER NOT NULL,
+                    bonus_paid INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals (referrer_id)")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
 
 # ============ Настройки (правятся админом из панели) ============
@@ -169,6 +191,77 @@ def ensure_user(user_id: int, username: str | None = None, first_name: str | Non
         )
         conn.commit()
         return get_user(user_id)
+
+
+def claim_daily(user_id: int, amount: int, cooldown_hours: int = 24) -> tuple[bool, int | None]:
+    """Выдаёт ежедневный бонус. Возвращает (успех, секунды до следующего или None)."""
+    now = int(time.time())
+    with _lock:
+        row = _get_conn().execute(
+            "SELECT last_daily FROM users WHERE id=?", (user_id,)
+        ).fetchone()
+        if row is None:
+            return False, None
+        last = row["last_daily"] or 0
+        if now - last < cooldown_hours * 3600:
+            remaining = cooldown_hours * 3600 - (now - last)
+            return False, remaining
+        new_bal = change_balance(user_id, amount, "daily", "Ежедневный бонус")
+        _get_conn().execute(
+            "UPDATE users SET last_daily=? WHERE id=?", (now, user_id)
+        )
+        _get_conn().commit()
+        return True, new_bal
+
+
+def set_referrer(user_id: int, referrer_id: int) -> bool:
+    """Записывает реферера для нового пользователя. Возвращает True если успешно."""
+    if user_id == referrer_id:
+        return False
+    with _lock:
+        conn = _get_conn()
+        row = conn.execute("SELECT referrer_id FROM users WHERE id=?", (user_id,)).fetchone()
+        if row is None or row["referrer_id"] is not None:
+            return False
+        try:
+            conn.execute(
+                "INSERT INTO referrals (referrer_id, referred_id, created_at) VALUES (?, ?, ?)",
+                (referrer_id, user_id, int(time.time())),
+            )
+            conn.execute(
+                "UPDATE users SET referrer_id=? WHERE id=?", (referrer_id, user_id)
+            )
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+
+def get_referrals(referrer_id: int) -> list[dict]:
+    with _lock:
+        rows = _get_conn().execute(
+            "SELECT * FROM referrals WHERE referrer_id=? ORDER BY created_at DESC",
+            (referrer_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def pay_referral_bonus(referrer_id: int, referred_id: int, amount: int) -> None:
+    """Начисляет бонус рефереру за первую ставку приглашённого."""
+    with _lock:
+        conn = _get_conn()
+        already = conn.execute(
+            "SELECT 1 FROM referrals WHERE referrer_id=? AND referred_id=? AND bonus_paid=1",
+            (referrer_id, referred_id),
+        ).fetchone()
+        if already:
+            return
+        add_balance(referrer_id, amount, "referral", f"Бонус за приглашение {referred_id}")
+        conn.execute(
+            "UPDATE referrals SET bonus_paid=1 WHERE referrer_id=? AND referred_id=?",
+            (referrer_id, referred_id),
+        )
+        conn.commit()
 
 
 def get_balance(user_id: int) -> int:

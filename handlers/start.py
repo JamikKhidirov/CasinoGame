@@ -1,9 +1,18 @@
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from database import ensure_user, get_top_points, get_top_users, get_transactions, get_user, get_user_stats
+from database import (
+    claim_daily,
+    ensure_user,
+    get_top_points,
+    get_top_users,
+    get_transactions,
+    get_user,
+    get_user_stats,
+    set_referrer,
+)
 from keyboards import (
     BTN_BALANCE,
     BTN_HISTORY,
@@ -46,11 +55,21 @@ def _top_kb(kind: str) -> InlineKeyboardMarkup:
 
 
 @router.message(CommandStart())
-async def cmd_start(msg: Message, state: FSMContext):
+async def cmd_start(msg: Message, state: FSMContext, command: CommandObject):
     await state.clear()
-    ensure_user(msg.from_user.id, msg.from_user.username, msg.from_user.first_name)
-    user = get_user(msg.from_user.id)
+    user = ensure_user(msg.from_user.id, msg.from_user.username, msg.from_user.first_name)
     games_line = " · ".join(f"{g['emoji']} {g['name']}" for g in GAMES.values())
+
+    # реферальная ссылка
+    ref_arg = command.args
+    if ref_arg and ref_arg.isdigit() and int(ref_arg) != msg.from_user.id:
+        if set_referrer(msg.from_user.id, int(ref_arg)):
+            await msg.bot.send_message(
+                int(ref_arg),
+                f"🎉 По вашей реферальной ссылке зашёл новый игрок <b>@{esc(msg.from_user.username or msg.from_user.id)}</b>!\n"
+                f"Вы получите бонус, когда он сделает первую ставку.",
+            )
+
     await msg.answer(
         f"🎰 <b>Добро пожаловать в Казино!</b>\n\n"
         f"Ваш баланс: <b>{fmt(user['balance'])}</b> 💰\n"
@@ -61,7 +80,9 @@ async def cmd_start(msg: Message, state: FSMContext):
         f"🔄 <b>Обмен очков</b> — ⭐ ↔ 💰 по выгодному курсу\n"
         f"📊 Моя статистика и топ игроков\n"
         f"💸 Вывод средств (Telegram Premium) и переводы\n"
-        f"💝 Донат и 🎁 промокоды",
+        f"💝 Донат и 🎁 промокоды\n"
+        f"🎁 <b>/daily</b> — ежедневный бонус\n"
+        f"👥 <b>Пригласи друга</b> — получи бонус за каждого",
         reply_markup=main_kb(),
     )
 
@@ -88,9 +109,49 @@ async def cmd_help(msg: Message, state: FSMContext):
     )
 
 
-@router.message(Command("balance"))
-async def cmd_balance(msg: Message, state: FSMContext):
-    await balance(msg, state)
+@router.message(Command("daily"))
+async def cmd_daily(msg: Message, state: FSMContext):
+    await state.clear()
+    ensure_user(msg.from_user.id, msg.from_user.username, msg.from_user.first_name)
+    user = get_user(msg.from_user.id)
+
+    import config as cfg
+    DAILY_AMOUNT = 500
+    COOLDOWN_HOURS = 24
+
+    ok, result = claim_daily(msg.from_user.id, DAILY_AMOUNT, COOLDOWN_HOURS)
+    if ok:
+        await msg.answer(
+            f"🎁 <b>Ежедневный бонус получен!</b>\n\n"
+            f"<blockquote>+{fmt(DAILY_AMOUNT)} 💰 на баланс\n"
+            f"Новый баланс: <b>{fmt(result)}</b> 💰</blockquote>\n\n"
+            f"Заходите через {COOLDOWN_HOURS} часов за следующим бонусом!",
+            reply_markup=main_kb(),
+        )
+    else:
+        hours = result // 3600
+        minutes = (result % 3600) // 60
+        await msg.answer(
+            f"⏳ Бонус уже получен сегодня.\n"
+            f"Следующий через <b>{hours} ч {minutes} мин</b>.",
+            reply_markup=main_kb(),
+        )
+
+
+@router.message(Command("ref"))
+async def cmd_ref(msg: Message):
+    """Моя реферальная ссылка."""
+    user = ensure_user(msg.from_user.id, msg.from_user.username, msg.from_user.first_name)
+    refs = get_referrals(msg.from_user.id)
+    bot_username = (await msg.bot.get_me()).username
+    link = f"https://t.me/{bot_username}?start={msg.from_user.id}"
+    await msg.answer(
+        f"👥 <b>Реферальная система</b>\n\n"
+        f"Ваша ссылка: <code>{link}</code>\n\n"
+        f"Пригласите друга — получите бонус, когда он сделает первую ставку.\n"
+        f"Приглашено: <b>{len(refs)}</b> человек",
+        reply_markup=main_kb(),
+    )
 
 
 @router.message(Command("history"))
