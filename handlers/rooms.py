@@ -262,6 +262,7 @@ async def dice_throw(msg: Message):
     # имитация «вращения»: пока анимация крутится, не раскрываем результат сразу
     await asyncio.sleep(config.DICE_ROLL_DELAY)
     room.extra_msgs.append(msg.message_id)
+    await asyncio.sleep(config.DICE_ROLL_DELAY)
     await room.manager.make_move(room, msg.from_user.id, msg.dice.value)
 
 

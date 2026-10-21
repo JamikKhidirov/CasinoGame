@@ -1,3 +1,5 @@
+import re
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
@@ -22,7 +24,8 @@ def normalize_code(raw: str) -> str:
         if code.startswith(prefix):
             code = code[len(prefix):]
             break
-    return code
+    m = re.match(r"^([A-Z0-9]+)", code)
+    return m.group(1) if m else code
 
 
 def promo_copy_line(code: str) -> str:
@@ -73,4 +76,3 @@ async def apply_promo(msg: Message, code: str):
             f"<blockquote>Новый баланс: <b>{fmt(user['balance'])}</b> 💰</blockquote>",
             reply_markup=main_kb(),
         )
-

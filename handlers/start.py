@@ -20,15 +20,19 @@ router = Router()
 def _top_text(kind: str, limit: int = 10) -> str:
     if kind == "points":
         rows = get_top_points(limit)
-        return "🏆 <b>Топ игроков по очкам ⭐</b>\n\n<blockquote>" + "\n".join(
-            f"{i + 1}. <b>@{esc(u['username'] or u['id'])}</b> — ⭐ {fmt(u['points'])}"
-            for i, u in enumerate(rows)
-        ) + "</blockquote>"
-    rows = get_top_users(limit)
-    return "🏆 <b>Топ игроков по балансу</b>\n\n<blockquote>" + "\n".join(
-        f"{i + 1}. <b>@{esc(u['username'] or u['id'])}</b> — {fmt(u['balance'])}"
-        for i, u in enumerate(rows)
-    ) + "</blockquote>"
+        title = "🏆 <b>Топ игроков по очкам ⭐</b>"
+    else:
+        rows = get_top_users(limit)
+        title = "🏆 <b>Топ игроков по балансу</b>"
+    if not rows:
+        return f"{title}\n\n<blockquote>Пусто — пока нет игроков.</blockquote>"
+    lines = []
+    for i, u in enumerate(rows):
+        if kind == "points":
+            lines.append(f"{i + 1}. <b>@{esc(u['username'] or u['id'])}</b> — ⭐ {fmt(u['points'])}")
+        else:
+            lines.append(f"{i + 1}. <b>@{esc(u['username'] or u['id'])}</b> — {fmt(u['balance'])}")
+    return title + "\n\n<blockquote>" + "\n".join(lines) + "</blockquote>"
 
 
 def _top_kb(kind: str) -> InlineKeyboardMarkup:

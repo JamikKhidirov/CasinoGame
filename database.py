@@ -336,7 +336,7 @@ def claim_promocode(code: str, user_id: int) -> str:
         if used:
             return "already"
         conn.execute(
-            "UPDATE promo_uses (code, user_id, created_at) VALUES (?, ?, ?)",
+            "INSERT INTO promo_uses (code, user_id, created_at) VALUES (?, ?, ?)",
             (code, user_id, int(time.time())),
         )
         conn.execute(
