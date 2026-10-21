@@ -26,13 +26,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY package.json ./
 RUN npm install --production
 
-# 3) Исходники бота (все в корне)
+# 3) Исходники бота (в папках)
 COPY main.py config.py database.py keyboards.py utils.py ./
-COPY handlers_admin.py handlers_banner.py handlers_common.py handlers_convert.py handlers_deposit.py handlers_promo.py handlers_rooms.py handlers_start.py handlers_transfer.py handlers_withdraw.py ./
-COPY services_banners.py services_games.py services_rooms.py ./
+COPY handlers/ ./handlers/
+COPY services/ ./services/
 
 # 4) Веб-файлы
-COPY server.js index.html style.css app.js ./
+COPY server.js ./
+COPY web/ ./web/
 
 # 5) Пользователь + папка для SQLite
 RUN mkdir -p /app/data \

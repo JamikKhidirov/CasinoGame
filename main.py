@@ -8,18 +8,18 @@ from aiogram.types import BotCommand, BotCommandScopeChat
 
 import config
 from database import get_due_banners, init_db
-from handlers_admin import router as admin_router
-from handlers_banner import router as banner_router
-from handlers_common import router as common_router
-from handlers_convert import router as convert_router
-from handlers_deposit import router as deposit_router
-from handlers_promo import router as promo_router
-from handlers_rooms import router as rooms_router
-from handlers_start import router as start_router
-from handlers_transfer import router as transfer_router
-from handlers_withdraw import router as withdraw_router
-from services_banners import broadcast_banner
-from services_rooms import bot_room_manager, room_manager
+from handlers.admin import router as admin_router
+from handlers.banner import router as banner_router
+from handlers.common import router as common_router
+from handlers.convert import router as convert_router
+from handlers.deposit import router as deposit_router
+from handlers.promo import router as promo_router
+from handlers.rooms import router as rooms_router
+from handlers.start import router as start_router
+from handlers.transfer import router as transfer_router
+from handlers.withdraw import router as withdraw_router
+from services.banners import broadcast_banner
+from services.rooms import bot_room_manager, room_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)

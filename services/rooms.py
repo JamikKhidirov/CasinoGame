@@ -29,7 +29,7 @@ from database import (
     record_game,
 )
 from keyboards import room_kb, throw_kb
-from services_games import GAMES
+from services.games import GAMES
 from utils import esc, fmt
 
 logger = logging.getLogger(__name__)

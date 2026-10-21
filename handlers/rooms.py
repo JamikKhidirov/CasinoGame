@@ -10,8 +10,8 @@ import asyncio
 import config
 from database import add_balance, ensure_user, get_user
 from keyboards import BTN_CREATE, BTN_VSBOT, cancel_kb, games_kb, room_kb, throw_kb
-from services_games import GAME_EMOJIS, GAMES, normalize_emoji
-from services_rooms import bot_room_manager, find_active_room, find_room, room_manager
+from services.games import GAME_EMOJIS, GAMES, normalize_emoji
+from services.rooms import bot_room_manager, find_active_room, find_room, room_manager
 from utils import fmt
 
 router = Router()

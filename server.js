@@ -24,7 +24,7 @@ app.use(helmet());
 app.use(compression());
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
-app.use(express.static(path.join(__dirname, ".")));
+app.use(express.static(path.join(__dirname, "web")));
 
 // ============ ИН-МЕМОРИЯ СОСТОЯНИЕ (для MVP, можно заменить на Redis/Postgres) ============
 const rooms = new Map(); // roomId -> Room
@@ -440,7 +440,7 @@ app.get("/tma/init", (req, res) => {
 });
 
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
+  res.sendFile(path.join(__dirname, "web", "index.html"));
 });
 
 server.listen(PORT, () => {

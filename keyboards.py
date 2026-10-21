@@ -1,6 +1,6 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
-from services_games import GAMES
+from services.games import GAMES
 
 # Тексты кнопок главного меню (держать в одном месте, чтобы не разъезжались с хендлерами)
 BTN_CREATE = "🎮 Создать комнату"
