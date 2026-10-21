@@ -215,7 +215,19 @@ class RoomManager:
             room.join_task.cancel()
         room.status = "playing"
         room.turn = room.players[0]
-        await self.start_game(room)
+        try:
+            await self.start_game(room)
+        except Exception:
+            room.players.remove(user_id)
+            del room.names[user_id]
+            self.active.pop(user_id, None)
+            room.status = "waiting"
+            room.turn = None
+            if room.points:
+                add_points(user_id, room.bet, "refund", f"Ошибка входа в комнату {room.room_id}")
+            else:
+                add_balance(user_id, room.bet, "refund", f"Ошибка входа в комнату {room.room_id}")
+            raise
         return True, None
 
     # ---------- игровой цикл ----------
