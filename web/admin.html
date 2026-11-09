@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🛠 Casino Game — Админ-панель</title>
+  <meta name="theme-color" content="#0f172a">
+  <script src="/socket.io/socket.io.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="admin-body">
+  <div class="app-container admin-container">
+    <header class="admin-header glass-card">
+      <div>
+        <h1>🛠 <span class="gradient-text">Админ-панель</span></h1>
+        <p class="muted small">Casino Game · управление комнатами и балансами</p>
+      </div>
+      <div class="admin-header-right">
+        <span class="pill" id="connStatus">● подключение…</span>
+        <a href="/" class="btn btn-outline btn-small">🏠 На сайт</a>
+        <button class="btn btn-outline btn-small" id="logoutBtn" hidden>Выйти</button>
+      </div>
+    </header>
+
+    <section class="glass-card admin-login" id="loginCard">
+      <h2>Вход</h2>
+      <p class="muted">Введите пароль из переменной <code>ADMIN_PASSWORD</code> в <code>.env</code>.</p>
+      <form id="loginForm" class="admin-form">
+        <input type="password" id="passwordInput" placeholder="Пароль" autocomplete="current-password" required>
+        <button type="submit" class="btn btn-primary">Войти</button>
+      </form>
+      <p class="muted small" id="loginError"></p>
+    </section>
+
+    <div id="dashboard" hidden>
+      <section class="stats-grid" id="statsGrid">
+        <div class="glass-card stat-card"><span>👥</span><strong id="statUsers">0</strong><small>пользователей</small></div>
+        <div class="glass-card stat-card"><span>🎮</span><strong id="statRooms">0</strong><small>активных комнат</small></div>
+        <div class="glass-card stat-card"><span>💰</span><strong id="statBalance">0</strong><small>суммарный баланс</small></div>
+        <div class="glass-card stat-card"><span>🎲</span><strong id="statGames">0</strong><small>сыграно игр</small></div>
+      </section>
+
+      <section class="glass-card admin-section">
+        <div class="section-header">
+          <h2>🔴 Активные комнаты</h2>
+          <button class="btn btn-outline btn-small" id="refreshBtn">Обновить</button>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>ID</th><th>Игра</th><th>Ставка</th><th>Игроки</th><th>Статус</th><th></th></tr></thead>
+            <tbody id="roomsBody"><tr><td colspan="6" class="muted">Пусто</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="admin-columns">
+        <section class="glass-card admin-section">
+          <div class="section-header"><h2>💳 Изменить баланс</h2></div>
+          <form id="balanceForm" class="admin-form vertical">
+            <input type="text" id="balanceUserId" placeholder="ID игрока" required>
+            <input type="number" id="balanceDelta" placeholder="Сумма (+ или -)" required>
+            <input type="text" id="balanceReason" placeholder="Причина (необязательно)">
+            <button type="submit" class="btn btn-primary">Применить</button>
+          </form>
+        </section>
+
+        <section class="glass-card admin-section">
+          <div class="section-header"><h2>📢 Рассылка</h2></div>
+          <form id="broadcastForm" class="admin-form vertical">
+            <textarea id="broadcastText" rows="4" maxlength="500" placeholder="Сообщение всем игрокам на сайте"></textarea>
+            <button type="submit" class="btn btn-accent">Отправить</button>
+          </form>
+        </section>
+      </section>
+
+      <section class="glass-card admin-section">
+        <div class="section-header">
+          <h2>🧾 Последние операции</h2>
+          <button class="btn btn-outline btn-small" id="refreshTxBtn">Обновить</button>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>#</th><th>Игрок</th><th>Сумма</th><th>Тип</th><th>Описание</th><th>Время</th></tr></thead>
+            <tbody id="txBody"><tr><td colspan="6" class="muted">Нет операций</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>

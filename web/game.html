@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>🎰 Casino Game — Игровая комната</title>
+  <meta name="theme-color" content="#0f172a">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="game-body">
+  <div class="game-shell">
+    <header class="game-topbar glass-card">
+      <a href="/" class="tma-back-btn" title="Выйти из комнаты" id="backBtn">←</a>
+      <div class="game-title">
+        <span id="gameIcon">🎮</span>
+        <div>
+          <strong id="gameTitle">Комната</strong>
+          <small id="roomCode">—</small>
+        </div>
+      </div>
+      <div class="game-topbar-right">
+        <span class="pill" id="betPill">💰 ставка: —</span>
+        <span class="pill" id="balancePill">💳 0</span>
+        <button class="btn btn-outline btn-small" id="leaveBtn">Выйти</button>
+      </div>
+    </header>
+
+    <main id="gameMain">
+      <section class="glass-card game-panel" id="waitingPanel">
+        <div class="waiting-anim">🎲</div>
+        <h2>Ожидание игроков</h2>
+        <p class="muted">Отправьте другу код комнаты — он сможет присоединиться.</p>
+        <div class="room-code-big" id="roomCodeBig">------</div>
+        <div class="players-grid" id="waitingPlayers"></div>
+        <div class="game-actions">
+          <button class="btn btn-primary" id="startBtn" hidden>▶ Начать игру</button>
+          <button class="btn btn-secondary" id="copyBtn">📋 Скопировать код</button>
+        </div>
+        <p class="muted small" id="waitingHint"></p>
+      </section>
+
+      <section class="game-panel" id="playPanel" hidden>
+        <div class="status-banner glass-card" id="statusBanner">Игра идёт…</div>
+
+        <div class="players-grid" id="playersGrid"></div>
+
+        <div class="table-area glass-card" id="tableArea">
+          <div class="table-meta" id="tableMeta"></div>
+          <div class="table-center" id="tableCenter"></div>
+        </div>
+
+        <div class="my-hand-wrap glass-card" id="myHandWrap">
+          <div class="my-hand-head">
+            <span>Ваша рука</span>
+            <span class="muted" id="myHandHint"></span>
+          </div>
+          <div class="cards-row" id="myHand"></div>
+        </div>
+
+        <div class="game-actions" id="playActions"></div>
+      </section>
+
+      <section class="glass-card game-panel" id="finishedPanel" hidden>
+        <div class="finish-emoji" id="finishEmoji">🏆</div>
+        <h2 id="finishTitle">Игра окончена</h2>
+        <div class="results-list" id="resultsList"></div>
+        <div class="game-actions">
+          <button class="btn btn-primary" id="rematchBtn" hidden>🔄 Играть ещё</button>
+          <a href="/" class="btn btn-secondary">🏠 На главную</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="game-footer muted small">
+      Casino Game · игра на виртуальные монеты
+    </footer>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🎰 Casino Game — Играй с друзьями онлайн</title>
-  <meta name="telegram-bot-api-version" content="6.1">
+  <meta name="theme-color" content="#0f172a">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <link rel="stylesheet" href="style.css">
@@ -29,7 +29,7 @@
         ←
       </button>
       <h1>🎰 Casino Game</h1>
-      <div class="tma-user-balance" id="tma-balance">💰 0</div>
+      <div class="tma-user-balance" id="tma-balance">💳 0</div>
     </div>
   </div>
 
@@ -44,10 +44,11 @@
       
       document.getElementById("tma-header").classList.remove("hidden");
       
-      // Balance from TWA init data
+      // Имя пользователя из Telegram (баланс подгрузит app.js)
       const initData = twa.initDataUnsafe;
       if (initData.user) {
-        document.getElementById("tma-balance").textContent = `💰 ${initData.user.id}`;
+        const firstName = initData.user.first_name || initData.user.username || "Игрок";
+        document.querySelector(".tma-header h1").textContent = `🎰 ${firstName}`;
       }
     }
   </script>
@@ -126,10 +127,17 @@
         <h2>⚡ Быстрый вход</h2>
       </div>
       <div class="quick-join-form">
-        <input type="text" id="roomJoinInput" placeholder="ID комнаты (например: A1B2C3D4)">
-        <input type="text" id="playerNameInput" placeholder="Ваше имя">
+        <input type="text" id="roomJoinInput" placeholder="ID комнаты (например: A1B2C3)">
+        <input type="text" id="playerNameInput" placeholder="Ваше имя" maxlength="24">
+        <input type="number" id="betInput" class="input-short" value="100" min="1" placeholder="Ставка" title="Ставка при создании комнаты">
+        <select id="maxPlayersInput" class="input-short" title="Максимум игроков">
+          <option value="2">2 игрока</option>
+          <option value="3">3 игрока</option>
+          <option value="4" selected>4 игрока</option>
+        </select>
         <button class="btn btn-primary" onclick="app.joinRoom()">Войти в комнату</button>
       </div>
+      <p class="muted small">Ставка и число игроков применяются при создании новой комнаты.</p>
     </section>
 
     <!-- Footer -->
