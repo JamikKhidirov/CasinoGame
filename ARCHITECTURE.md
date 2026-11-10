@@ -1,34 +1,66 @@
-# 🏗 Архитектура Casino Game
+<a id="top"></a>
+<div align="center">
 
-Документ описывает компоненты, потоки данных и хранение состояния.  
-Быстрый старт: [README.md](README.md). Развёртывание: [DEPLOY.md](DEPLOY.md). API: [API.md](API.md).
+<img src="assets/banner.svg" alt="Casino Game — архитектура" width="100%"/>
+
+<a href="README.md">
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&duration=2800&pause=800&color=A78BFA&center=true&vCenter=true&multiline=true&width=880&height=100&lines=Bot+%2B+Web+%2B+SQLite+%E2%80%94+one+container;Socket.io+real-time+rooms;Shared+database+with+WAL" alt="Анимация: архитектура"/>
+</a>
+
+<br/>
+
+<a href="README.md"><img alt="README" src="https://img.shields.io/badge/📖_README-обзор-3b82f6?style=for-the-badge"/></a>
+<a href="ARCHITECTURE.md"><img alt="Architecture" src="https://img.shields.io/badge/🏗_ARCHITECTURE-архитектура-8b5cf6?style=for-the-badge"/></a>
+<a href="DEPLOY.md"><img alt="Deploy" src="https://img.shields.io/badge/📦_DEPLOY-развёртывание-10b981?style=for-the-badge"/></a>
+<a href="API.md"><img alt="API" src="https://img.shields.io/badge/🔗_API-справочник-f59e0b?style=for-the-badge"/></a>
+
+</div>
 
 ---
 
 ## 📊 Общая схема
 
-```text
-┌────────────────────────────────────────────────────────────────────┐
-│                        Telegram / Browser                          │
-│  чат с ботом · Mini App · website · admin.html                     │
-└───────────────┬───────────────────────────────┬────────────────────┘
-                │ Bot API (polling)             │ HTTP + WebSocket
-                ▼                               ▼
-┌───────────────────────────────┐  ┌─────────────────────────────────┐
-│ 🤖 Python 3.12 + aiogram 3    │  │ 🌐 Node.js 20                   │
-│                               │  │ Express + Socket.io             │
-│ main.py                       │  │ server.js                       │
-│ handlers/  — команды и меню   │  │ web/       — фронтенд           │
-│ services/  — комнаты, игры    │  │ комнаты    — blackjack/durak/   │
-│ database.py — SQLite          │  │              dice               │
-└───────────────┬───────────────┘  └────────────────┬────────────────┘
-                │                                   │
-                └──────────────┬────────────────────┘
-                               ▼
-                ┌──────────────────────────────────┐
-                │ 💾 SQLite  /app/data/casino.db   │
-                │ WAL · общая база для бота и веба │
-                └──────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Clients["🌐 Клиенты"]
+        TG["Telegram-чат"]
+        TMA["Telegram Mini App"]
+        WEB["Браузер / сайт"]
+        ADM["admin.html"]
+    end
+
+    subgraph Container["🐳 Docker-контейнер casino-game"]
+        subgraph Py["🐍 Python 3.12 + aiogram 3"]
+            MAIN["main.py"]
+            H["handlers/"]
+            SVC["services/"]
+        end
+        subgraph Node["🟢 Node.js 20"]
+            SRV["server.js<br/>Express + Socket.io"]
+            FRONT["web/<br/>index · game · admin"]
+        end
+        DB[("💾 SQLite<br/>/app/data/casino.db")]
+    end
+
+    TG -->|Bot API polling| MAIN
+    TMA -->|HTTPS + WebSocket| SRV
+    WEB -->|HTTPS + WebSocket| SRV
+    ADM -->|Socket.io admin| SRV
+    MAIN --> H
+    MAIN --> SVC
+    H --> DB
+    SVC --> DB
+    SRV --> DB
+    SRV --> FRONT
+
+    classDef client fill:#1e3a8a,stroke:#60a5fa,color:#fff
+    classDef py fill:#1e40af,stroke:#3b82f6,color:#fff
+    classDef node fill:#064e3b,stroke:#10b981,color:#fff
+    classDef db fill:#78350f,stroke:#f59e0b,color:#fff
+    class TG,TMA,WEB,ADM client
+    class MAIN,H,SVC py
+    class SRV,FRONT node
+    class DB db
 ```
 
 Оба процесса запускаются одним скриптом `start.sh` внутри одного Docker-контейнера.
@@ -41,7 +73,7 @@
 
 - `main.py` — создаёт `Bot`, `Dispatcher`, подключает роутеры из `handlers/`.
 - `handlers/` — команды, кнопки, FSM-сценарии, админка бота.
-- `services/rooms.py` — комнаты и игровой цикл Telegram-игр (кости, дартс, футбол, монетка и т.д.).
+- `services/rooms.py` — комнаты и игровой цикл Telegram-игр.
 - `services/banners.py` — отложенные рассылки.
 - `services/games.py` — справочник нативных игр Telegram.
 - `database.py` — единственный слой доступа к SQLite со стороны Python.
@@ -90,56 +122,76 @@ SQLite работает в режиме **WAL** (`PRAGMA journal_mode=WAL`), в�
 
 ### Создание комнаты
 
-```text
-Browser
-  └─ socket.emit("join", { userId, userName, gameType, bet, maxPlayers })
-       └─ server.js: ensureUser() → users
-       └─ new Room(...) → rooms Map
-       └─ saveRoom() → web_rooms
-       └─ socket.emit("joined", { roomId, userId })
-       └─ redirect → /game.html?room=...
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as 🌐 Browser
+    participant S as 🟢 server.js
+    participant DB as 💾 SQLite
+
+    B->>S: join {userId, userName, gameType, bet, maxPlayers}
+    S->>DB: ensureUser() → users
+    S->>S: new Room(...) → rooms Map
+    S->>DB: saveRoom() → web_rooms
+    S-->>B: joined {roomId, userId}
+    B->>B: redirect → /game.html?room=...
 ```
 
 ### Старт игры и списание ставок
 
-```text
-Создатель → socket.emit("startGame")
-  └─ проверка: минимум 2 игрока, создатель, статус waiting
-  └─ reserveBets(): BEGIN IMMEDIATE
-       ├─ UPDATE users SET balance = balance - bet WHERE balance >= bet
-       └─ INSERT transactions (type='bet')
-  └─ initBlackjack / initDurak / initDice
-  └─ saveRoom() + broadcastRoom() + gameStarted
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as 👑 Создатель
+    participant S as 🟢 server.js
+    participant DB as 💾 SQLite
+
+    C->>S: startGame
+    S->>S: минимум 2 игрока, статус waiting
+    S->>DB: BEGIN IMMEDIATE
+    S->>DB: UPDATE users SET balance = balance - bet<br/>WHERE balance >= bet
+    S->>DB: INSERT transactions (type='bet')
+    S->>S: initBlackjack / initDurak / initDice
+    S->>DB: saveRoom()
+    S-->>C: roomUpdated + gameStarted
 ```
 
 ### Ход игрока
 
-```text
-Player → socket.emit("playerAction", { action, cardId? })
-  └─ проверка currentTurn
-  └─ handleBlackjackAction / handleDurakAction / handleDiceAction
-  └─ проверка конца игры
-  └─ saveRoom() → web_rooms
-  └─ broadcastRoom(): каждому сокету отправляется своя проекция комнаты
-       (свои карты видны, чужие — закрыты)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as 🎮 Player
+    participant S as 🟢 server.js
+    participant DB as 💾 SQLite
+
+    P->>S: playerAction {action, cardId?}
+    S->>S: проверка currentTurn
+    S->>S: handleBlackjackAction / handleDurakAction / handleDiceAction
+    S->>S: проверка конца игры
+    S->>DB: saveRoom() → web_rooms
+    S-->>P: roomUpdated (личная проекция комнаты)
+    Note over S,P: свои карты видны, чужие — закрыты
 ```
 
 ### Завершение и выплата
 
-```text
-Конец игры
-  └─ settleRoom(room, winnerIds)
-       ├─ pool = Σ ставок
-       ├─ commission = pool × COMMISSION_PERCENT / 100
-       ├─ prize = pool − commission
-       ├─ победители делят prize (остаток распределяется по 1 монете)
-       ├─ BEGIN IMMEDIATE
-       │    ├─ UPDATE users SET balance = balance + payout
-       │    ├─ INSERT transactions (type='win')
-       │    └─ INSERT game_stats (result, amount, opponent)
-       ├─ room.status = finished
-       ├─ saveRoom() + broadcastRoom()
-       └─ gameFinished { winner, results }
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as 🟢 server.js
+    participant DB as 💾 SQLite
+    participant P as 🎮 Игроки
+
+    S->>S: settleRoom(room, winnerIds)
+    S->>S: pool = Σ ставок − commission
+    S->>S: победители делят prize
+    S->>DB: BEGIN IMMEDIATE
+    S->>DB: UPDATE users SET balance = balance + payout
+    S->>DB: INSERT transactions (type='win')
+    S->>DB: INSERT game_stats (result, amount, opponent)
+    S->>S: room.status = finished
+    S-->>P: roomUpdated + gameFinished {winner, results}
 ```
 
 ### Перезапуск сервера
@@ -148,7 +200,7 @@ Player → socket.emit("playerAction", { action, cardId? })
 boot()
   ├─ initDb()        — таблицы и миграции
   ├─ loadRooms()     — восстановление web_rooms
-  └─ server.listen()
+  └─ server.listen() — HTTP + Socket.io
 ```
 
 Если игра шла во время перезапуска и ставки уже были списаны, состояние комнаты сохраняется. Игроки могут переподключиться по ссылке `/game.html?room=...` и продолжить. Если все отключились более чем на 10 минут — сервер возвращает ставки.
@@ -184,10 +236,13 @@ boot()
 
 ### Таймауты и авто-ход
 
-- `MOVE_TIMEOUT` секунд (по умолчанию 30) на ход.
-- Блэкджек: авто-`stand`.
-- Дурак: защищающийся автоматически берёт карты, атакующий завершает кон.
-- Кости: кубик бросается автоматически.
+| Игра | Поведение по таймауту |
+|------|------------------------|
+| 🃏 Блэкджек | авто-`stand` |
+| ♠️ Дурак | защищающийся берёт карты, атакующий завершает кон |
+| 🎲 Кости | кубик бросается автоматически |
+
+- `MOVE_TIMEOUT` секунд на ход (по умолчанию 30).
 - Если игрок отключился, его ход всё равно произойдёт по таймауту.
 
 ---
@@ -211,7 +266,7 @@ boot()
 ## 🧪 Тестирование
 
 - `run_tests.py` — 109 тестов Python-логики (база, экономика, комнаты, ставки, ничьи, бот, рассылки).
-- Веб-логика проверяется вручную через два браузера/вкладки и `/health`.
+- Веб-логика проверяется через два браузера/вкладки и `/health`.
 - Для проверки API удобно использовать:
 
 ```bash
@@ -223,8 +278,10 @@ curl http://localhost:3000/api/user/123456789
 
 ---
 
-## 🔗 Связанная документация
+<div align="center">
 
-- [📖 README.md](README.md) — обзор и быстрый старт
-- [📦 DEPLOY.md](DEPLOY.md) — развёртывание и backup
-- [🔗 API.md](API.md) — HTTP и Socket.io API
+[📖 README](README.md) · [📦 DEPLOY](DEPLOY.md) · [🔗 API](API.md)
+
+<a href="#top">⬆ Наверх</a>
+
+</div>

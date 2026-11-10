@@ -1,25 +1,37 @@
-# 📦 Развёртывание Casino Game
+<a id="top"></a>
+<div align="center">
+
+<img src="assets/banner.svg" alt="Casino Game — развёртывание" width="100%"/>
+
+<a href="README.md">
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&duration=2800&pause=800&color=34D399&center=true&vCenter=true&multiline=true&width=880&height=100&lines=docker+compose+up+-d+--build;One+container%3A+bot+%2B+web+%2B+SQLite;Data+survives+rebuilds" alt="Анимация: деплой"/>
+</a>
+
+<br/>
+
+<a href="README.md"><img alt="README" src="https://img.shields.io/badge/📖_README-обзор-3b82f6?style=for-the-badge"/></a>
+<a href="ARCHITECTURE.md"><img alt="Architecture" src="https://img.shields.io/badge/🏗_ARCHITECTURE-архитектура-8b5cf6?style=for-the-badge"/></a>
+<a href="DEPLOY.md"><img alt="Deploy" src="https://img.shields.io/badge/📦_DEPLOY-развёртывание-10b981?style=for-the-badge"/></a>
+<a href="API.md"><img alt="API" src="https://img.shields.io/badge/🔗_API-справочник-f59e0b?style=for-the-badge"/></a>
+
+</div>
+
+---
 
 Один Docker-контейнер запускает **Telegram-бота**, **веб-сервер игры** и **SQLite**.  
 Инструкция рассчитана на сервер с Linux, но команды работают и на Windows/macOS с Docker Desktop.
 
 ---
 
-## 📚 Документация
-
-- [📖 README.md](README.md) — обзор проекта и быстрый старт
-- [🏗 ARCHITECTURE.md](ARCHITECTURE.md) — архитектура и потоки данных
-- [🔗 API.md](API.md) — HTTP и Socket.io API
-
----
-
 ## ✅ Требования
 
-- Docker 20.10+
-- Docker Compose v2 (`docker compose`, не `docker-compose`)
-- 1 ГБ RAM и 1 ГБ свободного места
-- Токен Telegram-бота от [@BotFather](https://t.me/BotFather)
-- Для Mini App — публичный **HTTPS**-домен
+| | Требование |
+|---|------------|
+| 🐳 | Docker 20.10+ |
+| 📦 | Docker Compose v2 (`docker compose`, не `docker-compose`) |
+| 🧠 | 1 ГБ RAM и 1 ГБ свободного места |
+| 🤖 | Токен Telegram-бота от [@BotFather](https://t.me/BotFather) |
+| 🔒 | Для Mini App — публичный **HTTPS**-домен |
 
 ---
 
@@ -57,6 +69,29 @@ curl http://localhost:3000/health
 
 ## 🧩 Что запускается внутри контейнера
 
+```mermaid
+flowchart TB
+    subgraph C["🐳 casino-game"]
+        SH["start.sh"]
+        N["🟢 node server.js<br/>Express + Socket.io"]
+        P["🐍 python main.py<br/>aiogram 3 · polling"]
+        DB[("💾 /app/data/casino.db")]
+        SH --> N
+        SH --> P
+        N <--> DB
+        P <--> DB
+    end
+    WEB["🌐 Браузер / Mini App"] -->|:3000| N
+    TG["📱 Telegram"] -->|Bot API| P
+
+    classDef node fill:#064e3b,stroke:#10b981,color:#fff
+    classDef py fill:#1e40af,stroke:#3b82f6,color:#fff
+    classDef db fill:#78350f,stroke:#f59e0b,color:#fff
+    class N node
+    class P py
+    class DB db
+```
+
 `start.sh` запускает два процесса одновременно:
 
 ```text
@@ -75,7 +110,7 @@ curl http://localhost:3000/health
 
 ---
 
-## 🔧 Переменные окружения
+## ⚙️ Переменные окружения
 
 Создайте `.env` из `.env.example`. Минимально нужно:
 
@@ -85,7 +120,8 @@ ADMIN_IDS=123456789
 ADMIN_PASSWORD=change_me
 ```
 
-Полный список:
+<details open>
+<summary>Полная таблица переменных</summary>
 
 | Переменная | По умолчанию | Описание |
 |------------|--------------|----------|
@@ -104,10 +140,15 @@ ADMIN_PASSWORD=change_me
 | `JOIN_TIMEOUT` | `15` | ожидание соперника в комнатах бота |
 | `DICE_ROLL_DELAY` | `3` | задержка анимации кубика в боте |
 | `RESULT_MSG_TTL` | `15` | удаление результата игры в боте |
+| `BANNER_CHECK_INTERVAL` | `30` | период проверки авто-рассылок |
 | `WITHDRAW_MIN` | `1000` | минимальная сумма вывода |
 | `WITHDRAW_NOTE` | — | текст способа выплаты |
 | `DONATE_CARD_TYPE` / `DONATE_CARD_NUMBER` / `DONATE_CARD_NAME` | — | реквизиты для донатов |
-| `POINTS_*` | — | курсы и лимиты валюты ⭐ |
+| `POINTS_MIN_BET` / `POINTS_MAX_BET` | `10` / `100000` | лимиты ставок в очках ⭐ |
+| `POINTS_BUY_RATE` | `150` | курс 100 💰 → ⭐ |
+| `POINTS_SELL_RATE` | `60` | курс 100 ⭐ → 💰 |
+
+</details>
 
 > Настройки экономики можно менять и из Telegram-админки бота (`/admin → Настройки`).  
 > Веб-сервер читает `START_BALANCE`, `MIN_BET`, `MAX_BET`, `COMMISSION_PERCENT`, `MOVE_TIMEOUT` из `.env`.
@@ -167,7 +208,7 @@ docker compose start
 
 ---
 
-## 🔐 Telegram Mini App и HTTPS
+## 📱 Telegram Mini App и HTTPS
 
 Telegram открывает Mini App только по **HTTPS** на публичном домене. `localhost` подойдёт для разработки, но не для реального Telegram.
 
@@ -272,17 +313,21 @@ docker compose build --no-cache
 
 ## 🛡 Безопасность
 
-- `.env` исключён из Docker-образа через `.dockerignore`.
-- Контейнер работает от непривилегированного пользователя `bot` (uid 1000).
-- Админ-панель защищена паролем `ADMIN_PASSWORD`.
-- Встроенный rate limit на вход в админку и игровые действия.
-- CSP настроен под Telegram WebApp и inline-скрипты.
-- Не публикуйте `.env` и backup-файлы базы.
+| | Мера |
+|---|------|
+| 🔒 | `.env` исключён из Docker-образа через `.dockerignore` |
+| 👤 | Контейнер работает от непривилегированного пользователя `bot` (uid 1000) |
+| 🔑 | Админ-панель защищена паролем `ADMIN_PASSWORD` |
+| 🚦 | Встроенный rate limit на вход в админку и игровые действия |
+| 🧱 | CSP настроен под Telegram WebApp и inline-скрипты |
+| 🙈 | Не публикуйте `.env` и backup-файлы базы |
 
 ---
 
-## 🔗 Связанная документация
+<div align="center">
 
-- [📖 README.md](README.md) — обзор и быстрый старт
-- [🏗 ARCHITECTURE.md](ARCHITECTURE.md) — архитектура
-- [🔗 API.md](API.md) — API reference
+[📖 README](README.md) · [🏗 ARCHITECTURE](ARCHITECTURE.md) · [🔗 API](API.md)
+
+<a href="#top">⬆ Наверх</a>
+
+</div>

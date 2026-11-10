@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="220" viewBox="0 0 1200 220" role="img" aria-label="Casino Game — Blackjack, Durak, Dice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1d4ed8">
+        <animate attributeName="stop-color" values="#1d4ed8;#7c3aed;#0f172a;#1d4ed8" dur="14s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="55%" stop-color="#6d28d9">
+        <animate attributeName="stop-color" values="#6d28d9;#2563eb;#7c3aed;#6d28d9" dur="14s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" stop-color="#0f172a">
+        <animate attributeName="stop-color" values="#0f172a;#4c1d95;#1e3a8a;#0f172a" dur="14s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+
+    <radialGradient id="glow1" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#60a5fa" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="shine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Фон -->
+  <rect width="1200" height="220" fill="url(#bg)"/>
+
+  <!-- Плавающие свечения -->
+  <circle cx="150" cy="40" r="160" fill="url(#glow1)">
+    <animate attributeName="cx" values="150;210;150" dur="9s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="1050" cy="190" r="180" fill="url(#glow2)">
+    <animate attributeName="cx" values="1050;990;1050" dur="11s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Бегущий блик -->
+  <rect x="-260" y="0" width="220" height="220" fill="url(#shine)" transform="skewX(-18)">
+    <animate attributeName="x" values="-260;1260" dur="7s" repeatCount="indefinite"/>
+  </rect>
+
+  <!-- Волна снизу -->
+  <path d="M0 168 C 220 140, 380 200, 600 178 C 820 156, 980 205, 1200 172 L1200 220 L0 220 Z"
+        fill="#0f172a" fill-opacity="0.55"/>
+
+  <!-- Масти -->
+  <g fill="#ffffff" fill-opacity="0.22" font-family="Georgia, 'Times New Roman', serif" font-size="46">
+    <text x="84" y="76">♠
+      <animateTransform attributeName="transform" type="translate" values="0 0;0 -14;0 0" dur="5s" repeatCount="indefinite"/>
+    </text>
+    <text x="1080" y="70">♥
+      <animateTransform attributeName="transform" type="translate" values="0 0;0 12;0 0" dur="6s" repeatCount="indefinite"/>
+    </text>
+    <text x="120" y="196">♦
+      <animateTransform attributeName="transform" type="translate" values="0 0;0 10;0 0" dur="7s" repeatCount="indefinite"/>
+    </text>
+    <text x="1050" y="200">♣
+      <animateTransform attributeName="transform" type="translate" values="0 0;0 -10;0 0" dur="6.5s" repeatCount="indefinite"/>
+    </text>
+    <text x="600" y="215" font-size="26" fill-opacity="0.16">♠ ♥ ♦ ♣
+      <animateTransform attributeName="transform" type="translate" values="0 0;0 -4;0 0" dur="4s" repeatCount="indefinite"/>
+    </text>
+  </g>
+
+  <!-- Заголовок -->
+  <text x="600" y="98" text-anchor="middle"
+        font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="56" font-weight="800" fill="#ffffff" letter-spacing="5">CASINO GAME</text>
+
+  <text x="600" y="140" text-anchor="middle"
+        font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="21" font-weight="600" fill="#c7d2fe" letter-spacing="1">Blackjack · Durak · Dice</text>
+
+  <text x="600" y="166" text-anchor="middle"
+        font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="15" fill="#93c5fd" letter-spacing="0.5">Telegram Bot · Mini App · One Docker command</text>
+</svg>

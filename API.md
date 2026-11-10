@@ -1,7 +1,22 @@
-# 🔗 API Reference Casino Game
+<a id="top"></a>
+<div align="center">
 
-HTTP-эндпоинты, Socket.io-события и модели данных веб-сервера.  
-Обзор проекта: [README.md](README.md). Развёртывание: [DEPLOY.md](DEPLOY.md). Архитектура: [ARCHITECTURE.md](ARCHITECTURE.md).
+<img src="assets/banner.svg" alt="Casino Game — API Reference" width="100%"/>
+
+<a href="README.md">
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&duration=2800&pause=800&color=FBBF24&center=true&vCenter=true&multiline=true&width=880&height=100&lines=GET+%2Fhealth;GET+%2Fapi%2Frooms;Socket.io+events+%E2%80%94+join+%C2%B7+startGame+%C2%B7+action;JSON+models+%2B+examples" alt="Анимация: API"/>
+</a>
+
+<br/>
+
+<a href="README.md"><img alt="README" src="https://img.shields.io/badge/📖_README-обзор-3b82f6?style=for-the-badge"/></a>
+<a href="ARCHITECTURE.md"><img alt="Architecture" src="https://img.shields.io/badge/🏗_ARCHITECTURE-архитектура-8b5cf6?style=for-the-badge"/></a>
+<a href="DEPLOY.md"><img alt="Deploy" src="https://img.shields.io/badge/📦_DEPLOY-развёртывание-10b981?style=for-the-badge"/></a>
+<a href="API.md"><img alt="API" src="https://img.shields.io/badge/🔗_API-справочник-f59e0b?style=for-the-badge"/></a>
+
+</div>
+
+---
 
 Базовый адрес по умолчанию: `http://localhost:3000`.
 
@@ -114,6 +129,22 @@ HTTP-эндпоинты, Socket.io-события и модели данных �
 
 ```javascript
 const socket = io();
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as 💻 Клиент
+    participant S as 🟢 server.js
+    C->>S: connect
+    C->>S: join
+    S-->>C: joined + balance
+    S-->>C: roomUpdated
+    C->>S: startGame
+    S-->>C: gameStarted
+    C->>S: playerAction
+    S-->>C: roomUpdated
+    S-->>C: gameFinished
 ```
 
 ### Клиент → сервер
@@ -314,8 +345,10 @@ socket.on("gameFinished", ({ winner, results }) => {
 
 ---
 
-## 🔗 Связанная документация
+<div align="center">
 
-- [📖 README.md](README.md) — обзор и быстрый старт
-- [🏗 ARCHITECTURE.md](ARCHITECTURE.md) — архитектура и правила игр
-- [📦 DEPLOY.md](DEPLOY.md) — развёртывание и troubleshooting
+[📖 README](README.md) · [🏗 ARCHITECTURE](ARCHITECTURE.md) · [📦 DEPLOY](DEPLOY.md)
+
+<a href="#top">⬆ Наверх</a>
+
+</div>
