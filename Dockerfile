@@ -16,29 +16,27 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     NODE_ENV=production \
+    PYTHONPATH=/app/configs:/app/bot \
     DB_PATH=/app/data/casino.db \
     PORT=3000
 
 WORKDIR /app
 
-# 1) Python зависимости
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# 1) Python-зависимости (конфиги лежат в configs/)
+COPY configs/requirements.txt ./configs/requirements.txt
+RUN pip install --no-cache-dir -r configs/requirements.txt
 
-# 2) Node.js зависимости
-COPY package.json ./
-RUN npm install --omit=dev && npm cache clean --force
+# 2) Node.js-зависимости (casino/ — самостоятельное Node-приложение)
+COPY casino/package.json ./casino/package.json
+RUN cd casino && npm install --omit=dev && npm cache clean --force
 
-# 3) Исходники бота
-COPY main.py config.py database.py keyboards.py utils.py ./
-COPY handlers/ ./handlers/
-COPY services/ ./services/
+# 3) Исходники: бот, веб-казино, конфиги
+COPY configs/ ./configs/
+COPY bot/ ./bot/
+COPY casino/ ./casino/
+COPY start.sh ./
 
-# 4) Веб-сервер и фронтенд
-COPY server.js start.sh ./
-COPY web/ ./web/
-
-# 5) Непривилегированный пользователь + папка для SQLite
+# 4) Непривилегированный пользователь + папка для SQLite
 RUN mkdir -p /app/data \
     && sed -i 's/\r$//' /app/start.sh \
     && chmod +x /app/start.sh \
@@ -46,10 +44,10 @@ RUN mkdir -p /app/data \
     && chown -R bot:bot /app
 USER bot
 
-# 6) Том для БД (данные переживают пересборку)
+# 5) Том для БД (данные переживают пересборку)
 VOLUME ["/app/data"]
 
-# 7) Проверка, что веб-сервер отвечает
+# 6) Проверка, что веб-сервер отвечает
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["curl", "-fsS", "http://localhost:3000/health"]
 

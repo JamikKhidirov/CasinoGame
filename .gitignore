@@ -1,17 +1,24 @@
 .venv/
+venv/
 __pycache__/
 *.pyc
 .idea/
-casino.db
-casino.db-wal
-casino.db-shm
-final_test.db
-final_test.db-wal
-final_test.db-shm
-tie_check.db
-tie_check.db-wal
-tie_check.db-shm
-reply_check*.db
-reply_check*.db-wal
-reply_check*.db-shm
+.vscode/
+node_modules/
+
+# Секреты
 .env
+.env.local
+
+# Локальная SQLite (папка data/ остаётся в git через .gitkeep)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+*.db-wal
+*.db-shm
+
+# Логи и мусор
+*.log
+npm-debug.log
+.DS_Store
+Thumbs.db

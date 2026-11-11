@@ -73,8 +73,8 @@ curl http://localhost:3000/health
 flowchart TB
     subgraph C["🐳 casino-game"]
         SH["start.sh"]
-        N["🟢 node server.js<br/>Express + Socket.io"]
-        P["🐍 python main.py<br/>aiogram 3 · polling"]
+        N["🟢 node casino/server.js<br/>Express + Socket.io"]
+        P["🐍 python bot/main.py<br/>aiogram 3 · polling"]
         DB[("💾 /app/data/casino.db")]
         SH --> N
         SH --> P
@@ -96,17 +96,19 @@ flowchart TB
 
 ```text
 /app/start.sh
-├── node server.js     # Express + Socket.io + web/ + SQLite
-└── python main.py     # Telegram-бот (aiogram 3, polling)
+├── node /app/casino/server.js   # Express + Socket.io + casino/web/ + SQLite
+└── python /app/bot/main.py      # Telegram-бот (aiogram 3, polling)
 ```
 
 Если один процесс падает, контейнер останавливается и Docker перезапускает его (`restart: unless-stopped`).
 
 | Процесс | Что делает |
 |---------|------------|
-| `node server.js` | отдаёт сайт, `/game.html`, `/admin.html`, Socket.io, HTTP API, хранит комнаты |
-| `python main.py` | обрабатывает команды Telegram, игры в чате, админку бота |
+| `node casino/server.js` | отдаёт сайт, `/game.html`, `/admin.html`, Socket.io, HTTP API, хранит комнаты |
+| `python bot/main.py` | обрабатывает команды Telegram, игры в чате, админку бота |
 | SQLite | общая база `/app/data/casino.db` для обоих процессов |
+
+> Внутри контейнера `PYTHONPATH=/app/configs:/app/bot` — так `config` из `configs/` и модули бота из `bot/` доступны без изменения импортов.
 
 ---
 
@@ -173,6 +175,28 @@ ADMIN_PASSWORD=change_me
 git pull
 docker compose up -d --build
 ```
+
+---
+
+## ☁️ Деплой в Amvera Cloud
+
+В корне лежит готовый `amvera.yml`. Amvera собирает проект по `Dockerfile`; **`docker-compose.yml` там не поддерживается**.
+
+```yaml
+build:
+  dockerfile: Dockerfile
+
+run:
+  containerPort: 3000
+  persistenceMount: /app/data
+```
+
+1. Загрузите репозиторий в Amvera (GitHub или Amvera Git).
+2. В разделе **Переменные** задайте `BOT_TOKEN`, `ADMIN_IDS`, `ADMIN_PASSWORD`, остальные — по желанию.
+3. `DB_PATH=/app/data/casino.db` уже задан в `Dockerfile`, а `persistenceMount: /app/data` подключает постоянное хранилище — база переживает пересборку.
+4. Порт приложения — `3000`, тип — веб-приложение (HTTP).
+
+> Для Telegram Mini App нужен HTTPS-домен. Amvera выдаёт его автоматически; останется указать URL в `@BotFather`.
 
 ---
 

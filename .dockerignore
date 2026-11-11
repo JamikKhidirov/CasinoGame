@@ -21,15 +21,16 @@ __pycache__
 *.db-wal
 *.db-shm
 data/
+tests/
 
 # Node.js
 node_modules
 npm-debug.log
 
-# Докер-файлы, документация и тесты внутри образа не нужны
+# Докер-файлы, документация и ассеты внутри образа не нужны
 Dockerfile
 .dockerignore
 docker-compose.yml
 README.md
 *.md
-run_tests.py
+assets/

@@ -34,7 +34,7 @@ const DB_PATH = process.env.DB_PATH
   ? (path.isAbsolute(process.env.DB_PATH)
       ? process.env.DB_PATH
       : path.resolve(__dirname, process.env.DB_PATH))
-  : path.resolve(__dirname, "casino.db");
+  : path.resolve(__dirname, "..", "data", "casino.db");
 
 const START_BALANCE = intEnv("START_BALANCE", 1000);
 const START_POINTS = intEnv("START_POINTS", 2000);

@@ -1,0 +1,16 @@
+# ============================================
+#  🎰 Casino Game — конфигурация Amvera Cloud
+#  https://docs.amvera.ru/applications/configuration/docker.html
+#
+#  Amvera собирает проект по Dockerfile и НЕ поддерживает
+#  docker-compose.yml. Переменные окружения (BOT_TOKEN,
+#  ADMIN_IDS, ADMIN_PASSWORD и т.д.) задайте в панели Amvera.
+# ============================================
+build:
+  dockerfile: Dockerfile
+
+run:
+  # Веб-сервер и Socket.io слушают 3000 внутри контейнера
+  containerPort: 3000
+  # Постоянное хранилище Amvera монтируется сюда — SQLite переживёт пересборку
+  persistenceMount: /app/data

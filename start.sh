@@ -2,6 +2,10 @@
 # Запускает веб-сервер и Telegram-бота в одном контейнере.
 set -u
 
+cd /app || exit 1
+# configs/ — модуль config, bot/ — database, handlers, services, keyboards, utils
+export PYTHONPATH="/app/configs:/app/bot${PYTHONPATH:+:$PYTHONPATH}"
+
 NODE_PID=""
 BOT_PID=""
 
@@ -15,11 +19,11 @@ cleanup() {
 trap cleanup TERM INT
 
 echo "🚀 Запуск веб-сервера..."
-node server.js &
+node /app/casino/server.js &
 NODE_PID=$!
 
 echo "🤖 Запуск Telegram-бота..."
-python main.py &
+python /app/bot/main.py &
 BOT_PID=$!
 
 # Ждём завершения любого из процессов. Если один упал — контейнер

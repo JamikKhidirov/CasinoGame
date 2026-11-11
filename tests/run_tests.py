@@ -3,10 +3,18 @@ import asyncio
 import os
 import sys
 import time
+from pathlib import Path
 
-os.environ["DB_PATH"] = "final_test.db"
-if os.path.exists("final_test.db"):
-    os.remove("final_test.db")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "bot"))
+sys.path.insert(0, str(ROOT / "configs"))
+
+DB_FILE = ROOT / "data" / "final_test.db"
+os.environ["DB_PATH"] = str(DB_FILE)
+for suffix in ("", "-wal", "-shm"):
+    stale = Path(str(DB_FILE) + suffix)
+    if stale.exists():
+        stale.unlink()
 
 import database
 from services.banners import broadcast_banner

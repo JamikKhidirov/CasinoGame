@@ -48,7 +48,12 @@ RESULT_MSG_TTL = _int("RESULT_MSG_TTL", 15)  # через сколько сек 
 BANNER_CHECK_INTERVAL = _int("BANNER_CHECK_INTERVAL", 30)  # сек между проверками авторассылки
 
 # ==== БД ====
-DB_PATH = os.getenv("DB_PATH", "casino.db")
+# В Docker путь задан через DB_PATH=/app/data/casino.db.
+# Локально по умолчанию — data/casino.db в корне проекта.
+_DEFAULT_DB = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "casino.db"
+)
+DB_PATH = os.getenv("DB_PATH", _DEFAULT_DB)
 
 # ==== Настройки, которые админ может менять прямо из панели (/admin → Настройки) ====
 # key -> (название, значение по умолчанию из .env)

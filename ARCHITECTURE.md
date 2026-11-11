@@ -31,13 +31,13 @@ flowchart TB
 
     subgraph Container["🐳 Docker-контейнер casino-game"]
         subgraph Py["🐍 Python 3.12 + aiogram 3"]
-            MAIN["main.py"]
-            H["handlers/"]
-            SVC["services/"]
+            MAIN["bot/main.py"]
+            H["bot/handlers/"]
+            SVC["bot/services/"]
         end
         subgraph Node["🟢 Node.js 20"]
-            SRV["server.js<br/>Express + Socket.io"]
-            FRONT["web/<br/>index · game · admin"]
+            SRV["casino/server.js<br/>Express + Socket.io"]
+            FRONT["casino/web/<br/>index · game · admin"]
         end
         DB[("💾 SQLite<br/>/app/data/casino.db")]
     end
@@ -69,24 +69,25 @@ flowchart TB
 
 ## 🧱 Компоненты
 
-### 1. Telegram-бот (`main.py`, `handlers/`, `services/`)
+### 1. Telegram-бот (`bot/main.py`, `bot/handlers/`, `bot/services/`)
 
-- `main.py` — создаёт `Bot`, `Dispatcher`, подключает роутеры из `handlers/`.
-- `handlers/` — команды, кнопки, FSM-сценарии, админка бота.
-- `services/rooms.py` — комнаты и игровой цикл Telegram-игр.
-- `services/banners.py` — отложенные рассылки.
-- `services/games.py` — справочник нативных игр Telegram.
-- `database.py` — единственный слой доступа к SQLite со стороны Python.
+- `bot/main.py` — создаёт `Bot`, `Dispatcher`, подключает роутеры из `bot/handlers/`.
+- `bot/handlers/` — команды, кнопки, FSM-сценарии, админка бота.
+- `bot/services/rooms.py` — комнаты и игровой цикл Telegram-игр.
+- `bot/services/banners.py` — отложенные рассылки.
+- `bot/services/games.py` — справочник нативных игр Telegram.
+- `bot/database.py` — единственный слой доступа к SQLite со стороны Python.
+- `configs/config.py` — настройки из `.env` (подключается через `PYTHONPATH`).
 
-### 2. Веб-сервер (`server.js`)
+### 2. Веб-сервер (`casino/server.js`)
 
-- Express отдаёт `web/` и HTTP API.
+- Express отдаёт `casino/web/` и HTTP API.
 - Socket.io обслуживает мультиплеер в реальном времени.
 - В памяти держит `Map<roomId, Room>`; каждый снимок комнаты сохраняется в `web_rooms`.
 - При старте восстанавливает комнаты из `web_rooms`.
 - Списывает и начисляет баланс через те же таблицы `users`, `transactions`, `game_stats`.
 
-### 3. Фронтенд (`web/`)
+### 3. Фронтенд (`casino/web/`)
 
 | Файл | Назначение |
 |------|------------|
@@ -265,7 +266,7 @@ boot()
 
 ## 🧪 Тестирование
 
-- `run_tests.py` — 109 тестов Python-логики (база, экономика, комнаты, ставки, ничьи, бот, рассылки).
+- `tests/run_tests.py` — 109 тестов Python-логики (база, экономика, комнаты, ставки, ничьи, бот, рассылки).
 - Веб-логика проверяется через два браузера/вкладки и `/health`.
 - Для проверки API удобно использовать:
 

@@ -119,6 +119,45 @@ docker compose up -d --build
 
 </details>
 
+<details>
+<summary>☁️ Запуск в Amvera Cloud</summary>
+
+В корне уже есть `amvera.yml` — Amvera собирает проект по `Dockerfile` (docker-compose там не поддерживается).
+
+1. Подключите репозиторий в Amvera.
+2. В панели задайте переменные: `BOT_TOKEN`, `ADMIN_IDS`, `ADMIN_PASSWORD`.
+3. Порт — `3000`, постоянное хранилище уже примонтировано в `/app/data`.
+
+Подробнее: [DEPLOY.md](DEPLOY.md#-деплой-в-amvera-cloud).
+
+</details>
+
+<details>
+<summary>💻 Локальный запуск без Docker (разработка)</summary>
+
+```bash
+pip install -r configs/requirements.txt
+cd casino && npm install && cd ..
+```
+
+Затем в двух терминалах из корня проекта:
+
+```bash
+# Windows PowerShell
+$env:PYTHONPATH="configs;bot"; python bot/main.py
+
+# Linux / macOS
+PYTHONPATH=configs:bot python bot/main.py
+```
+
+```bash
+node casino/server.js
+```
+
+База по умолчанию создаётся в `data/casino.db`.
+
+</details>
+
 ---
 
 ## 🎮 Игры
@@ -197,53 +236,45 @@ flowchart LR
 
 ```text
 CasinoGame/
-├── main.py                 # точка входа Telegram-бота (aiogram 3)
-├── config.py               # конфигурация из .env + настройки админа
-├── database.py             # SQLite: пользователи, транзакции, игры, рефералы
-├── keyboards.py            # клавиатуры бота
-├── utils.py                # форматирование и экранирование
+├── bot/                    # 🤖 Telegram-бот (aiogram 3)
+│   ├── main.py             # точка входа бота
+│   ├── database.py         # SQLite: пользователи, транзакции, игры
+│   ├── keyboards.py        # клавиатуры бота
+│   ├── utils.py            # форматирование и экранирование
+│   ├── handlers/           # команды, кнопки, FSM-сценарии, админка
+│   └── services/           # комнаты, баннеры, справочник игр
 │
-├── handlers/               # хендлеры бота
-│   ├── start.py            # /start, баланс, статистика, /daily, /ref
-│   ├── rooms.py            # создание комнат и игровой цикл бота
-│   ├── admin.py            # Telegram-админка
-│   ├── banner.py           # баннеры и рассылки
-│   ├── convert.py          # обмен ⭐ ↔ 💰
-│   ├── deposit.py          # пополнение
-│   ├── withdraw.py         # вывод
-│   ├── promo.py            # промокоды
-│   ├── transfer.py         # переводы
-│   └── common.py           # общие обработчики
+├── casino/                 # 🎰 веб-казино
+│   ├── server.js           # Express + Socket.io + SQLite
+│   ├── package.json        # Node.js-зависимости
+│   └── web/                # фронтенд
+│       ├── index.html      # главная страница
+│       ├── game.html       # игровая комната
+│       ├── admin.html      # веб-админ-панель
+│       ├── style.css       # glassmorphism и анимации
+│       ├── app.js
+│       ├── game.js
+│       └── admin.js
 │
-├── services/               # бизнес-логика бота
-│   ├── rooms.py            # комнаты и игровой цикл
-│   ├── banners.py          # рассылка баннеров
-│   └── games.py            # справочник игр
+├── configs/                # ⚙️ конфигурация
+│   ├── config.py           # настройки из .env
+│   └── requirements.txt    # Python-зависимости
 │
-├── server.js               # Node.js: Express + Socket.io + SQLite
-├── start.sh                # запускает node server.js и python main.py
-├── package.json            # Node.js зависимости
-├── requirements.txt        # Python зависимости
-│
-├── web/                    # фронтенд
-│   ├── index.html          # главная страница
-│   ├── game.html           # игровая комната
-│   ├── admin.html          # веб-админ-панель
-│   ├── style.css           # glassmorphism-дизайн и анимации
-│   ├── app.js              # логика главной страницы
-│   ├── game.js             # клиент блэкджека, дурака и костей
-│   └── admin.js            # клиент админ-панели
+├── data/                   # 💾 SQLite (casino.db, final_test.db)
+├── tests/                  # 🧪 run_tests.py — 109 тестов
+├── assets/                 # 🎞 анимированный баннер документации
 │
 ├── Dockerfile              # Python + Node.js в одном образе
 ├── docker-compose.yml      # один сервис = весь стек
+├── start.sh                # запускает бота и веб-сервер
+├── amvera.yml              # конфигурация Amvera Cloud
 ├── .env.example            # шаблон переменных окружения
-├── .dockerignore
-├── run_tests.py            # 109 тестов Python-логики
+├── .gitignore / .dockerignore / .gitattributes
 │
+├── README.md
 ├── ARCHITECTURE.md
 ├── DEPLOY.md
-├── API.md
-└── README.md
+└── API.md
 ```
 
 </details>
@@ -329,10 +360,10 @@ Telegram-админка бота (`/admin`) остаётся отдельной 
 
 ```bash
 # Windows PowerShell
-$env:PYTHONIOENCODING="utf-8"; python run_tests.py
+$env:PYTHONIOENCODING="utf-8"; python tests/run_tests.py
 
 # Linux / macOS
-python run_tests.py
+python tests/run_tests.py
 ```
 
 Ожидаемый результат:
