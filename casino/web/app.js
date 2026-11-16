@@ -40,6 +40,8 @@ const app = {
     const nameInput = document.getElementById("playerNameInput");
     if (nameInput) nameInput.value = this.currentUserName;
 
+    this.bindUi();
+
     socket.on("connect", () => console.log("Socket connected"));
     socket.on("disconnect", () => this.showNotification("Соединение потеряно. Переподключение…", "error"));
 
@@ -64,6 +66,32 @@ const app = {
     this.refreshRooms();
     setInterval(() => this.refreshRooms(), 5000);
     this.loadBalance();
+  },
+
+  bindUi() {
+    // События навешиваем через addEventListener: CSP helmet запрещает
+    // inline-обработчики (script-src-attr 'none'), из-за чего onclick не работал.
+    document.querySelectorAll("[data-create]").forEach((btn) => {
+      btn.addEventListener("click", () => this.createRoom(btn.dataset.create));
+    });
+
+    const refreshBtn = document.getElementById("refreshRoomsBtn");
+    if (refreshBtn) refreshBtn.addEventListener("click", () => this.refreshRooms());
+
+    const joinBtn = document.getElementById("joinRoomBtn");
+    if (joinBtn) joinBtn.addEventListener("click", () => this.joinRoom());
+
+    const roomInput = document.getElementById("roomJoinInput");
+    if (roomInput) {
+      roomInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") this.joinRoom();
+      });
+    }
+
+    const backBtn = document.getElementById("tmaBackBtn");
+    if (backBtn) {
+      backBtn.addEventListener("click", () => window.Telegram?.WebApp?.MainButton?.hide());
+    }
   },
 
   async loadBalance() {

@@ -27,8 +27,8 @@ COPY configs/requirements.txt ./configs/requirements.txt
 RUN pip install --no-cache-dir -r configs/requirements.txt
 
 # 2) Node.js-зависимости (casino/ — самостоятельное Node-приложение)
-COPY casino/package.json ./casino/package.json
-RUN cd casino && npm install --omit=dev && npm cache clean --force
+COPY casino/package.json casino/package-lock.json ./casino/
+RUN cd casino && npm ci --omit=dev && npm cache clean --force
 
 # 3) Исходники: бот, веб-казино, конфиги
 COPY configs/ ./configs/

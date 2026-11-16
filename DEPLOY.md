@@ -73,11 +73,11 @@ curl http://localhost:3000/health
 flowchart TB
     subgraph C["🐳 casino-game"]
         SH["start.sh"]
-        N["🟢 node casino/server.js<br/>Express + Socket.io"]
         P["🐍 python bot/main.py<br/>aiogram 3 · polling"]
+        N["🟢 node casino/server.js<br/>Express + Socket.io"]
         DB[("💾 /app/data/casino.db")]
-        SH --> N
         SH --> P
+        P -->|запускает| N
         N <--> DB
         P <--> DB
     end
@@ -92,23 +92,26 @@ flowchart TB
     class DB db
 ```
 
-`start.sh` запускает два процесса одновременно:
+`start.sh` запускает единый процесс бота, который сам поднимает сайт:
 
 ```text
 /app/start.sh
-├── node /app/casino/server.js   # Express + Socket.io + casino/web/ + SQLite
 └── python /app/bot/main.py      # Telegram-бот (aiogram 3, polling)
+    └── node /app/casino/server.js   # Express + Socket.io + casino/web/ + SQLite
 ```
+
+Если бот не может авторизоваться в Telegram (неверный `BOT_TOKEN`), сайт всё
+равно остаётся доступным — в логах будет понятное сообщение об ошибке.
 
 Если один процесс падает, контейнер останавливается и Docker перезапускает его (`restart: unless-stopped`).
 
 | Процесс | Что делает |
 |---------|------------|
+| `python bot/main.py` | обрабатывает команды Telegram, игры в чате, админку бота; запускает и перезапускает сайт |
 | `node casino/server.js` | отдаёт сайт, `/game.html`, `/admin.html`, Socket.io, HTTP API, хранит комнаты |
-| `python bot/main.py` | обрабатывает команды Telegram, игры в чате, админку бота |
 | SQLite | общая база `/app/data/casino.db` для обоих процессов |
 
-> Внутри контейнера `PYTHONPATH=/app/configs:/app/bot` — так `config` из `configs/` и модули бота из `bot/` доступны без изменения импортов.
+> Внутри контейнера `PYTHONPATH=/app/configs:/app/bot` — так `config` из `configs/` и модули бота из `bot/` доступны без изменения импортов. Для локального запуска это не нужно: `bot/main.py` добавляет пути сам.
 
 ---
 

@@ -244,6 +244,11 @@ const userSockets = new Map(); // socket.id -> { userId, name }
 const adminSockets = new Set();
 const loginAttempts = new Map();
 
+// Боты живут по «виртуальным» ID за пределами Telegram- и гостевых ID.
+const BOT_ID_BASE = -9000000000000;
+let botCounter = 0;
+const BOT_NAMES = ["🤖 Бот Аня", "🤖 Бот Макс", "🤖 Бот Лиза", "🤖 Бот Тим"];
+
 function generateRoomId() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let id = "";
@@ -345,6 +350,30 @@ class Room {
     return true;
   }
 
+  /** Добавляет бота-соперника. Боты не пишутся в БД и не платят ставку,
+   *  поэтому не влияют на баланс реальных игроков. */
+  addBot(name) {
+    if (this.players.size >= this.maxPlayers) return null;
+    botCounter += 1;
+    const id = BOT_ID_BASE - botCounter;
+    const bot = {
+      id,
+      name: sanitizeName(name),
+      isBot: true,
+      connected: true,
+      hand: [],
+      score: 0,
+      stood: false,
+      busted: false,
+      out: false,
+      bet: 0,
+      balance: 0,
+      dice: null,
+    };
+    this.players.set(id, bot);
+    return bot;
+  }
+
   removePlayer(userId) {
     return this.players.delete(userId);
   }
@@ -414,8 +443,8 @@ class Room {
       room.players.set(p.id, {
         id: p.id,
         name: sanitizeName(p.name),
-        isBot: false,
-        connected: false,
+        isBot: Boolean(p.isBot),
+        connected: p.isBot ? true : false,
         hand: Array.isArray(p.hand) ? p.hand : [],
         score: Number(p.score) || 0,
         stood: Boolean(p.stood),
@@ -599,10 +628,56 @@ function clearTurnTimer(room) {
 
 function scheduleTurn(room) {
   clearTurnTimer(room);
-  if (room.status !== "playing" || !room.currentTurn) return;
+  if (room.status !== "playing" || !room.currentTurn || room.settled) return;
+  const current = room.getPlayer(room.currentTurn);
+  const isBot = Boolean(current && current.isBot);
   room.turnTimer = setTimeout(() => {
-    autoTurn(room).catch((err) => console.error("autoTurn:", err));
-  }, TURN_TIMEOUT);
+    if (isBot) botTurn(room).catch((err) => console.error("botTurn:", err));
+    else autoTurn(room).catch((err) => console.error("autoTurn:", err));
+  }, isBot ? 900 : TURN_TIMEOUT);
+}
+
+/** Ход бота: та же логика, что и у игрока, но решение принимается автоматически. */
+async function botTurn(room) {
+  if (room.status !== "playing" || room.settled) return;
+  const bot = room.getPlayer(room.currentTurn);
+  if (!bot || !bot.isBot) return;
+
+  if (room.gameType === "blackjack") {
+    handleBlackjackAction(room, bot, bot.score < 17 ? "hit" : "stand");
+  } else if (room.gameType === "dice") {
+    if (room.diceRolls[bot.id] === undefined) handleDiceAction(room, bot, "roll");
+  } else if (room.gameType === "durak") {
+    if (room.currentTurn === room.defender) {
+      const pair = room.table.find((item) => !item.defend);
+      if (pair) {
+        const card = bot.hand.find((c) => cardBeats(c, pair.attack, room.trump?.suit));
+        if (card) handleDurakAction(room, bot, "defend", card.id);
+        else handleDurakAction(room, bot, "take");
+      }
+    } else if (room.currentTurn === room.attacker) {
+      const undefended = room.table.filter((pair) => !pair.defend);
+      if (room.table.length && !undefended.length) {
+        handleDurakAction(room, bot, "pass");
+      } else {
+        const ranks = tableRanks(room);
+        const card = room.table.length
+          ? bot.hand.find((c) => ranks.has(c.name))
+          : bot.hand[0];
+        if (card) handleDurakAction(room, bot, "attack", card.id);
+        else handleDurakAction(room, bot, "pass");
+      }
+    }
+  }
+
+  room.touch();
+  if (room.status === "playing" && !room.settled) {
+    await saveRoom(room);
+    broadcastRoom(room);
+    scheduleTurn(room);
+  } else {
+    broadcastRoom(room);
+  }
 }
 
 function scheduleDeletion(room) {
@@ -813,11 +888,16 @@ async function settleRoom(room, winnerIds, reason) {
   for (const id of winnerIds) {
     if (room.players.has(id) && !winners.includes(id)) winners.push(id);
   }
-  const share = winners.length ? Math.floor(prize / winners.length) : 0;
-  let extra = winners.length ? prize - share * winners.length : 0;
+  // Приз делим только между реальными игроками: боты не платили ставку.
+  const paidWinners = winners.filter((id) => {
+    const player = room.getPlayer(id);
+    return player && !player.isBot;
+  });
+  const share = paidWinners.length ? Math.floor(prize / paidWinners.length) : 0;
+  let extra = paidWinners.length ? prize - share * paidWinners.length : 0;
 
   const payouts = new Map();
-  for (const id of winners) {
+  for (const id of paidWinners) {
     const payout = share + (extra > 0 ? 1 : 0);
     if (extra > 0) extra -= 1;
     payouts.set(id, payout);
@@ -827,6 +907,17 @@ async function settleRoom(room, winnerIds, reason) {
   try {
     await withTx(async () => {
       for (const player of players) {
+        if (player.isBot) {
+          results[player.id] = {
+            outcome: "bot",
+            amount: 0,
+            payout: 0,
+            score: player.score,
+            dice: room.diceRolls[player.id] ?? player.dice ?? null,
+            cardsLeft: player.hand.length,
+          };
+          continue;
+        }
         const payout = payouts.get(player.id) || 0;
         if (payout > 0) {
           await dbRun("UPDATE users SET balance = balance + ? WHERE id=?", [payout, player.id]);
@@ -879,6 +970,17 @@ async function refundRoom(room, reason) {
   try {
     await withTx(async () => {
       for (const player of players) {
+        if (player.isBot) {
+          results[player.id] = {
+            outcome: "bot",
+            amount: 0,
+            payout: 0,
+            score: player.score,
+            dice: player.dice ?? null,
+            cardsLeft: player.hand.length,
+          };
+          continue;
+        }
         const payout = player.bet;
         if (payout > 0) {
           await dbRun("UPDATE users SET balance = balance + ? WHERE id=?", [payout, player.id]);
@@ -907,6 +1009,11 @@ async function refundRoom(room, reason) {
 async function reserveBets(room) {
   const reserved = [];
   for (const player of room.playerList()) {
+    if (player.isBot) {
+      player.bet = 0; // боты играют бесплатно и не влияют на банк
+      player.balance = 0;
+      continue;
+    }
     const ok = await tryDeduct(player.id, room.bet, `Ставка в веб-комнате ${room.id}`);
     if (!ok) {
       for (const id of reserved) {
@@ -1014,9 +1121,10 @@ async function autoTurn(room) {
   }
 
   room.touch();
+  if (room.status !== "playing" || room.settled) return;
   await saveRoom(room);
   broadcastRoom(room);
-  if (room.status === "playing") scheduleTurn(room);
+  scheduleTurn(room);
 }
 
 function handleBlackjackAction(room, player, action) {
@@ -1204,6 +1312,36 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("addBot", async () => {
+    try {
+      const room = rooms.get(socket.data.roomId);
+      if (!room) return;
+      if (room.creatorId !== socket.data.userId) {
+        emitError(socket, "Только создатель может добавить бота");
+        return;
+      }
+      if (room.status !== "waiting") {
+        emitError(socket, "Бота можно добавить только до начала игры");
+        return;
+      }
+      if (room.players.size >= room.maxPlayers) {
+        emitError(socket, "Комната заполнена");
+        return;
+      }
+      const bot = room.addBot(BOT_NAMES[room.players.size % BOT_NAMES.length]);
+      if (!bot) {
+        emitError(socket, "Не удалось добавить бота");
+        return;
+      }
+      room.touch();
+      await saveRoom(room);
+      broadcastRoom(room);
+    } catch (err) {
+      console.error("addBot:", err);
+      emitError(socket, "Ошибка добавления бота");
+    }
+  });
+
   socket.on("rematch", async () => {
     try {
       const room = rooms.get(socket.data.roomId);
@@ -1267,7 +1405,9 @@ io.on("connection", (socket) => {
       }
 
       room.touch();
-      if (room.status === "playing") scheduleTurn(room);
+      // Если ход завершил игру, settleRoom сам сохранит и разошлёт состояние.
+      if (room.status !== "playing" || room.settled) return;
+      scheduleTurn(room);
       await saveRoom(room);
       broadcastRoom(room);
     } catch (err) {
@@ -1427,12 +1567,19 @@ async function leaveRoom(socket, isDisconnect = false) {
     // периодическая очистка.
     if (!isDisconnect && !stillConnected) {
       room.removePlayer(userId);
-      if (room.players.size === 0) {
+      if (!room.playerList().some((p) => !p.isBot)) {
+        // В комнате остались только боты — она больше никому не нужна.
         await deleteRoom(room);
         return;
       }
       if (room.creatorId === userId) {
-        room.creatorId = room.playerList()[0].id;
+        const nextCreator = room.playerList().find((p) => !p.isBot && p.id !== userId);
+        if (nextCreator) {
+          room.creatorId = nextCreator.id;
+        } else {
+          await deleteRoom(room);
+          return;
+        }
       }
     } else {
       player.connected = stillConnected;
@@ -1502,7 +1649,16 @@ app.get("/api/user/:id", async (req, res) => {
       [userId]
     );
     if (!user) {
-      res.status(404).json({ error: "not found" });
+      // Игрок ещё не входил в комнату — показываем стартовые значения,
+      // чтобы главная страница не сыпала 404 в консоль.
+      res.json({
+        id: userId,
+        username: null,
+        first_name: null,
+        balance: START_BALANCE,
+        points: START_POINTS,
+        exists: false,
+      });
       return;
     }
     res.json(user);
@@ -1536,7 +1692,8 @@ setInterval(async () => {
   const now = Date.now();
   for (const room of Array.from(rooms.values())) {
     try {
-      const allOffline = !room.playerList().some((p) => p.connected);
+      const humans = room.playerList().filter((p) => !p.isBot);
+      const allOffline = !humans.some((p) => p.connected);
       if (room.status === "playing" && allOffline && now - room.lastActivity > 10 * 60 * 1000) {
         await refundRoom(room, "Все игроки отключились");
         continue;
@@ -1545,7 +1702,7 @@ setInterval(async () => {
         await deleteRoom(room);
         continue;
       }
-      if (room.status === "waiting" && !room.playerList().some((p) => p.connected)
+      if (room.status === "waiting" && !humans.some((p) => p.connected)
           && now - room.lastActivity > 2 * 60 * 1000) {
         await deleteRoom(room);
         continue;

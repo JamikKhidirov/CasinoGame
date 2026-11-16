@@ -140,21 +140,36 @@ pip install -r configs/requirements.txt
 cd casino && npm install && cd ..
 ```
 
-Затем в двух терминалах из корня проекта:
+Затем одним запуском из корня проекта — **бот сам поднимет сайт**:
 
 ```bash
-# Windows PowerShell
-$env:PYTHONPATH="configs;bot"; python bot/main.py
-
-# Linux / macOS
-PYTHONPATH=configs:bot python bot/main.py
+python bot/main.py
 ```
 
+Что произойдёт:
+
+```text
+🤖 Telegram-бот (polling)          → команды, игры в чате
+🌐 Сайт      http://localhost:3000 → блэкджек, дурак, кости
+🛠 Админка   http://localhost:3000/admin.html
+💾 SQLite    data/casino.db        → общая база бота и сайта
+```
+
+Полезные флаги:
+
 ```bash
+# только бот, сайт уже запущен отдельно
+WEB_AUTOSTART=0 python bot/main.py
+
+# только сайт
 node casino/server.js
 ```
 
-База по умолчанию создаётся в `data/casino.db`.
+База по умолчанию создаётся в `data/casino.db`. Если `node` не в PATH,
+бот попробует найти Node.js в стандартных папках установки.
+
+> В комнате можно играть одному: создатель нажимает **«🤖 Добавить бота»**,
+> затем **«▶ Начать игру»** — бот сам делает ходы.
 
 </details>
 
@@ -261,12 +276,12 @@ CasinoGame/
 │   └── requirements.txt    # Python-зависимости
 │
 ├── data/                   # 💾 SQLite (casino.db, final_test.db)
-├── tests/                  # 🧪 run_tests.py — 109 тестов
+├── tests/                  # 🧪 run_tests.py (109) + web_e2e.js (e2e)
 ├── assets/                 # 🎞 анимированный баннер документации
 │
 ├── Dockerfile              # Python + Node.js в одном образе
 ├── docker-compose.yml      # один сервис = весь стек
-├── start.sh                # запускает бота и веб-сервер
+├── start.sh                # единая точка входа: бот + сайт
 ├── amvera.yml              # конфигурация Amvera Cloud
 ├── .env.example            # шаблон переменных окружения
 ├── .gitignore / .dockerignore / .gitattributes
@@ -370,6 +385,24 @@ python tests/run_tests.py
 
 ```text
 ВСЕ ТЕСТЫ ПРОЙДЕНЫ (109)
+```
+
+### E2E-тест веб-казино
+
+Проверяет настоящий сервер через Socket.io: партии в кости, блэкджек и дурака
+двумя игроками плюс соло-игру с ботом (нужен `npm install` в `casino/`):
+
+```bash
+node tests/web_e2e.js
+# или
+cd casino && npm test
+```
+
+Ожидаемый результат:
+
+```text
+ПРОЙДЕНО: 21, ПРОВАЛЕНО: 0
+ALL_WEB_E2E_OK
 ```
 
 <details>

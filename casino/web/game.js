@@ -33,6 +33,7 @@ const els = {
   waitingPlayers: document.getElementById("waitingPlayers"),
   waitingHint: document.getElementById("waitingHint"),
   startBtn: document.getElementById("startBtn"),
+  addBotBtn: document.getElementById("addBotBtn"),
   copyBtn: document.getElementById("copyBtn"),
   statusBanner: document.getElementById("statusBanner"),
   playersGrid: document.getElementById("playersGrid"),
@@ -143,7 +144,7 @@ function renderPlayers(room) {
       </div>
       <div class="player-status">${esc(playerStatus(room, player))}</div>
       ${hand}
-      ${player.balance !== undefined ? `<div class="player-balance muted small">💳 ${player.balance}</div>` : ""}
+      ${!player.isBot && player.balance !== undefined ? `<div class="player-balance muted small">💳 ${player.balance}</div>` : ""}
     </div>`;
   }).join("");
 }
@@ -162,11 +163,15 @@ function renderWaiting(room) {
 
   const isCreator = room.creatorId === room.yourId || state.isCreator;
   els.startBtn.hidden = !(isCreator && room.players.length >= 2);
+  els.addBotBtn.hidden = !isCreator;
+  els.addBotBtn.disabled = room.players.length >= room.maxPlayers;
   els.waitingHint.textContent = !isCreator
     ? "Ждём, пока создатель начнёт игру."
-    : room.players.length < 2
-      ? "Нужно минимум 2 игрока. Отправьте код другу."
-      : "Можно начинать!";
+    : room.players.length >= room.maxPlayers
+      ? "Комната заполнена — можно начинать!"
+      : room.players.length < 2
+        ? "Нужно минимум 2 игрока: позовите друга по коду или добавьте бота."
+        : "Можно начинать или добавить ещё бота.";
 }
 
 function renderPlay(room) {
@@ -276,6 +281,9 @@ function renderDurak(room) {
 }
 
 function renderDice(room) {
+  els.tableArea.hidden = false;
+  els.myHandWrap.hidden = true;
+  els.tableMeta.innerHTML = "";
   const isMyTurn = room.currentTurn === room.yourId && room.status === "playing";
   const me = room.players.find((p) => p.id === room.yourId);
   els.statusBanner.textContent = isMyTurn
@@ -284,7 +292,15 @@ function renderDice(room) {
   if (me && me.dice) {
     els.statusBanner.textContent += ` · Вы выбросили ${me.dice}`;
   }
-  els.playActions.innerHTML = isMyTurn
+
+  els.tableCenter.innerHTML = `<div class="dice-stage">${room.players.map((player) => `
+    <div class="dice-lane ${room.currentTurn === player.id && room.status === "playing" ? "is-turn" : ""}">
+      <div class="die ${player.dice ? "rolled" : ""}">${player.dice || "?"}</div>
+      <span class="muted small">${esc(player.name)}</span>
+    </div>
+  `).join("")}</div>`;
+
+  els.playActions.innerHTML = isMyTurn && !(me && me.dice)
     ? '<button class="btn btn-accent" data-dice="roll">🎲 Бросить кубик</button>'
     : "";
   const btn = els.playActions.querySelector("[data-dice]");
@@ -322,7 +338,13 @@ function renderFinished(room) {
     const outcome = result.outcome || "—";
     const amount = Number(result.amount || 0);
     const amountText = amount > 0 ? `+${amount}` : amount < 0 ? `${amount}` : "0";
-    const outcomeText = outcome === "win" ? "Победа" : outcome === "lose" ? "Проигрыш" : "Возврат";
+    const outcomeText = outcome === "win"
+      ? "Победа"
+      : outcome === "lose"
+        ? "Проигрыш"
+        : outcome === "bot"
+          ? "Бот"
+          : "Возврат";
     let detail = "";
     if (room.gameType === "blackjack") detail = `Очки: ${result.score ?? player.score ?? "—"}`;
     if (room.gameType === "dice") detail = `Кубик: ${result.dice ?? player.dice ?? "—"}`;
@@ -330,7 +352,7 @@ function renderFinished(room) {
     return `<div class="result-row ${outcome}">
       <span>${esc(player.name)}${player.id === room.yourId ? " (вы)" : ""}</span>
       <span class="muted">${esc(detail)}</span>
-      <strong class="${amount > 0 ? "green-text" : amount < 0 ? "red-text" : ""}">${outcomeText} ${amountText}</strong>
+      <strong class="${amount > 0 ? "green-text" : amount < 0 ? "red-text" : ""}">${outcomeText}${outcome === "bot" ? "" : " " + amountText}</strong>
     </div>`;
   }).join("");
 
@@ -410,6 +432,8 @@ socket.on("gameFinished", ({ winner }) => {
 
 socket.on("error", (data) => {
   notify(data?.message || "Ошибка", "error");
+  // Перерисовываем состояние: например, чтобы разблокировать кнопку броска.
+  if (state.room) render();
   if (!state.joinedOnce && /не найдена|началась|переполнена/i.test(data?.message || "")) {
     setTimeout(() => { window.location.href = "/"; }, 1500);
   }
@@ -425,6 +449,10 @@ socket.io.on("reconnect", () => {
 
 /* ---------------------------- UI events ------------------------- */
 els.startBtn.addEventListener("click", () => socket.emit("startGame"));
+els.addBotBtn.addEventListener("click", () => {
+  els.addBotBtn.disabled = true;
+  socket.emit("addBot");
+});
 els.rematchBtn.addEventListener("click", () => socket.emit("rematch"));
 els.copyBtn.addEventListener("click", async () => {
   const link = `${window.location.origin}/game.html?room=${encodeURIComponent(state.roomId)}`;

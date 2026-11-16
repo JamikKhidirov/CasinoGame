@@ -25,7 +25,7 @@
   <!-- Telegram Mini App Header -->
   <div id="tma-header" class="tma-header hidden">
     <div class="tma-header-content">
-      <button class="tma-back-btn" onclick="window.Telegram.WebApp?.MainButton.hide()">
+      <button class="tma-back-btn" id="tmaBackBtn" title="Закрыть">
         ←
       </button>
       <h1>🎰 Casino Game</h1>
@@ -65,13 +65,13 @@
         </p>
         
         <div class="hero-actions">
-          <button class="btn btn-primary btn-large" onclick="app.createRoom('blackjack')">
+          <button class="btn btn-primary btn-large" data-create="blackjack">
             🃏 Блэкджек 21
           </button>
-          <button class="btn btn-secondary btn-large" onclick="app.createRoom('durak')">
+          <button class="btn btn-secondary btn-large" data-create="durak">
             ♠️ Дурак
           </button>
-          <button class="btn btn-accent btn-large" onclick="app.createRoom('dice')">
+          <button class="btn btn-accent btn-large" data-create="dice">
             🎲 Кости
           </button>
         </div>
@@ -113,7 +113,7 @@
     <section class="rooms-section glass-card">
       <div class="section-header">
         <h2>🔥 Активные комнаты</h2>
-        <button class="btn btn-outline" onclick="app.refreshRooms()">Обновить</button>
+        <button class="btn btn-outline" id="refreshRoomsBtn">Обновить</button>
       </div>
       <div class="rooms-grid" id="roomsGrid">
         <!-- Rooms injected here -->
@@ -135,7 +135,7 @@
           <option value="3">3 игрока</option>
           <option value="4" selected>4 игрока</option>
         </select>
-        <button class="btn btn-primary" onclick="app.joinRoom()">Войти в комнату</button>
+        <button class="btn btn-primary" id="joinRoomBtn">Войти в комнату</button>
       </div>
       <p class="muted small">Ставка и число игроков применяются при создании новой комнаты.</p>
     </section>

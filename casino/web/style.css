@@ -20,6 +20,11 @@
   box-sizing: border-box;
 }
 
+/* Атрибут hidden должен побеждать author-стили (.btn { display:inline-flex }). */
+[hidden] {
+  display: none !important;
+}
+
 html {
   scroll-behavior: smooth;
 }
@@ -626,6 +631,29 @@ body::before {
   animation: diePop 0.4s ease;
 }
 @keyframes diePop { 0% { transform: scale(0.6) rotate(-20deg); } 70% { transform: scale(1.12) rotate(6deg); } 100% { transform: scale(1) rotate(0); } }
+
+.dice-stage {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.25rem;
+  padding: 0.75rem 0;
+}
+.dice-lane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.75rem 1rem;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  transition: border-color 0.25s ease, background 0.25s ease;
+}
+.dice-lane.is-turn {
+  border-color: var(--accent);
+  background: rgba(139, 92, 246, 0.12);
+}
+.dice-lane .die { width: 72px; height: 72px; font-size: 2.1rem; }
 
 .finish-emoji { font-size: 3.5rem; text-align: center; animation: pulse 2s infinite; }
 .results-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
