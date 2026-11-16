@@ -20,6 +20,14 @@ def _int_list(name: str) -> list[int]:
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_IDS = _int_list("ADMIN_IDS")
 
+# ==== Веб-сайт ====
+# Адрес сайта, который бот показывает игрокам (кнопка «Войти на сайт»).
+WEB_URL = os.getenv("WEB_URL", "http://localhost:3000").strip().rstrip("/") or "http://localhost:3000"
+# Глобальный выключатель веб-админки (0 — вход в /admin запрещён).
+ADMIN_PANEL_ENABLED = os.getenv("ADMIN_PANEL_ENABLED", "1").strip().lower() not in {
+    "0", "false", "no", "off"
+}
+
 # ==== Экономика ====
 START_BALANCE = _int("START_BALANCE", 1000)        # стартовый баланс новичка
 MIN_BET = _int("MIN_BET", 1)                        # минимальная ставка

@@ -26,6 +26,7 @@ from aiogram.types import BotCommand, BotCommandScopeChat
 import config
 from database import get_due_banners, init_db
 from handlers.admin import router as admin_router
+from handlers.auth import router as auth_router
 from handlers.banner import router as banner_router
 from handlers.common import router as common_router
 from handlers.convert import router as convert_router
@@ -61,6 +62,8 @@ USER_COMMANDS = [
     BotCommand(command="transfer", description="📤 Перевод баланса"),
     BotCommand(command="donate", description="💝 Донат"),
     BotCommand(command="promo", description="🎁 Промокод"),
+    BotCommand(command="site", description="🌐 Войти на сайт"),
+    BotCommand(command="id", description="🆔 Мой ID"),
     BotCommand(command="help", description="❓ Помощь"),
 ]
 
@@ -149,6 +152,60 @@ def _find_node() -> str | None:
     return None
 
 
+def _webapp_dir() -> Path:
+    return _ROOT_DIR / "casino" / "webapp"
+
+
+def _ensure_web_build() -> bool:
+    """Собирает React-приложение, если готовой сборки ещё нет.
+
+    Так `python bot/main.py` работает «из коробки»: при первом запуске
+    Vite собирает фронтенд в casino/webapp/dist, откуда его отдаёт Express.
+    """
+    app_dir = _webapp_dir()
+    dist_index = app_dir / "dist" / "index.html"
+    if dist_index.exists():
+        return True
+    if not (app_dir / "package.json").exists():
+        logger.warning("React-приложение не найдено (%s)", app_dir)
+        return False
+
+    node = _find_node()
+    if not node:
+        logger.error("Node.js не найден — не могу собрать React-приложение")
+        return False
+
+    npm = shutil.which("npm")
+    if not npm:
+        candidate = Path(node).with_name("npm.cmd" if os.name == "nt" else "npm")
+        if not candidate.is_file():
+            logger.error("npm не найден рядом с %s — сборка фронтенда пропущена", node)
+            return False
+        npm = str(candidate)
+
+    env = os.environ.copy()
+    env["PATH"] = str(Path(node).parent) + os.pathsep + env.get("PATH", "")
+    logger.info("📦 Собираю React-приложение (это нужно один раз)…")
+    for args in (["install", "--no-audit", "--no-fund"], ["run", "build"]):
+        if os.name == "nt":
+            cmd = [os.environ.get("COMSPEC", "cmd.exe"), "/c", npm, *args]
+        else:
+            cmd = [npm, *args]
+        try:
+            result = subprocess.run(cmd, cwd=str(app_dir), env=env, timeout=900)
+        except Exception as exc:  # noqa: BLE001 — сборка не должна ронять бота
+            logger.error("Не удалось выполнить npm %s: %s", " ".join(args), exc)
+            return False
+        if result.returncode != 0:
+            logger.error("npm %s завершился с кодом %s", " ".join(args), result.returncode)
+            return False
+    if dist_index.exists():
+        logger.info("✅ React-приложение собрано: %s", dist_index)
+        return True
+    logger.error("Сборка прошла, но %s не найден", dist_index)
+    return False
+
+
 def start_web_server(wait_seconds: float = 25.0) -> subprocess.Popen | None:
     """Поднимает Node.js-сервер сайта, если он ещё не запущен.
 
@@ -167,6 +224,8 @@ def start_web_server(wait_seconds: float = 25.0) -> subprocess.Popen | None:
     if _health_ok(port):
         logger.info("Веб-сервер уже работает: http://localhost:%s", port)
         return None
+
+    _ensure_web_build()
 
     node = _find_node()
     if not node:
@@ -264,6 +323,7 @@ async def main():
     # порядок важен: common (глобальная отмена) идёт первым
     dp.include_router(common_router)
     dp.include_router(start_router)
+    dp.include_router(auth_router)
     dp.include_router(rooms_router)
     dp.include_router(convert_router)
     dp.include_router(deposit_router)

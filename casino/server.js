@@ -2,9 +2,9 @@
  * 🎰 Casino Game — веб-сервер (Express + Socket.io + SQLite)
  *
  * Один процесс обслуживает:
- *   • статический фронтенд из папки web/
+ *   • React-фронтенд из casino/webapp/dist
  *   • мультиплеер в реальном времени (блэкджек, дурак, кости)
- *   • админ-панель (/admin.html)
+ *   • админ-панель (/admin) и REST API (/api/*)
  *
  * Все пользователи, балансы, транзакции, статистика игр и активные комнаты
  * хранятся в той же SQLite-базе, что и Telegram-бот (DB_PATH).
@@ -46,12 +46,32 @@ const ROOM_TTL = 30 * 60 * 1000;
 const FINISHED_TTL = 15 * 60 * 1000;
 
 const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD || "").trim();
-const ADMIN_FALLBACK = "admin123";
 const USING_FALLBACK_PASSWORD = !ADMIN_PASSWORD;
+
+// Кто вообще может зайти в веб-админку: только эти Telegram ID.
+const ADMIN_IDS = new Set(
+  String(process.env.ADMIN_IDS || "")
+    .split(",")
+    .map((value) => Number.parseInt(value.trim(), 10))
+    .filter((value) => Number.isFinite(value))
+);
+
+function envFlag(name, fallback = true) {
+  const raw = String(process.env[name] ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  return !["0", "false", "no", "off"].includes(raw);
+}
+
+// Глобальный выключатель админки: 0 — панель полностью недоступна.
+const ADMIN_PANEL_ENABLED = envFlag("ADMIN_PANEL_ENABLED", true);
+// Пароль — запасной вход (например, если бот временно недоступен).
+// По умолчанию он работает только если ADMIN_PASSWORD задан явно.
+const ADMIN_PASSWORD_LOGIN = envFlag("ADMIN_PASSWORD_LOGIN", true) && Boolean(ADMIN_PASSWORD);
+
 if (USING_FALLBACK_PASSWORD) {
   console.warn(
-    "⚠️  ADMIN_PASSWORD не задан — используется пароль по умолчанию 'admin123'. " +
-    "Обязательно задайте ADMIN_PASSWORD в .env!"
+    "⚠️  ADMIN_PASSWORD не задан — пароль 'admin123' больше не пускает в веб-админку. " +
+    "Задайте ADMIN_PASSWORD или входите по коду из бота."
   );
 }
 
@@ -150,6 +170,69 @@ async function initDb() {
       updated_at INTEGER NOT NULL
     )
   `);
+
+  // Бот и сайт используют одну базу. Сайт умеет работать и без бота,
+  // поэтому таблицы входа, донатов, выводов и настроек создаём здесь же.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS login_codes (
+      code TEXT PRIMARY KEY,
+      user_id INTEGER,
+      username TEXT,
+      first_name TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      kind TEXT NOT NULL DEFAULT 'player',
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      used_at INTEGER
+    )
+  `);
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS web_sessions (
+      token TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    )
+  `);
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS admin_sessions (
+      token TEXT PRIMARY KEY,
+      user_id INTEGER,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    )
+  `);
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS deposits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      amount INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL,
+      processed_at INTEGER,
+      admin_id INTEGER,
+      source TEXT,
+      comment TEXT
+    )
+  `);
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS withdrawals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      amount INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL,
+      processed_at INTEGER,
+      admin_id INTEGER
+    )
+  `);
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
   // Миграции на случай старой базы, созданной прежними версиями бота.
   const userColumns = await dbAll("PRAGMA table_info(users)");
   const columnNames = new Set(userColumns.map((column) => column.name));
@@ -162,8 +245,28 @@ async function initDb() {
   if (!columnNames.has("referrer_id")) {
     await dbRun("ALTER TABLE users ADD COLUMN referrer_id INTEGER");
   }
+  const depositColumns = await dbAll("PRAGMA table_info(deposits)");
+  const depositColumnNames = new Set(depositColumns.map((column) => column.name));
+  if (!depositColumnNames.has("source")) {
+    await dbRun("ALTER TABLE deposits ADD COLUMN source TEXT");
+  }
+  if (!depositColumnNames.has("comment")) {
+    await dbRun("ALTER TABLE deposits ADD COLUMN comment TEXT");
+  }
+  const codeColumns = await dbAll("PRAGMA table_info(login_codes)");
+  if (!codeColumns.some((column) => column.name === "kind")) {
+    await dbRun("ALTER TABLE login_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'player'");
+  }
+  const adminSessionColumns = await dbAll("PRAGMA table_info(admin_sessions)");
+  if (!adminSessionColumns.some((column) => column.name === "user_id")) {
+    await dbRun("ALTER TABLE admin_sessions ADD COLUMN user_id INTEGER");
+  }
   await dbRun("CREATE INDEX IF NOT EXISTS idx_tx_user ON transactions (user_id, id)");
   await dbRun("CREATE INDEX IF NOT EXISTS idx_stats_user ON game_stats (user_id, id)");
+  await dbRun("CREATE INDEX IF NOT EXISTS idx_login_codes_user ON login_codes (user_id)");
+  await dbRun("CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions (user_id)");
+  await dbRun("CREATE INDEX IF NOT EXISTS idx_deposits_status ON deposits (status)");
+  await dbRun("CREATE INDEX IF NOT EXISTS idx_withdrawals_status ON withdrawals (status)");
 }
 
 function nowSec() {
@@ -234,6 +337,141 @@ async function credit(userId, amount, type, description) {
       [userId, amount, type, description, nowSec()]
     );
   });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Сессии: вход по коду из Telegram, админ по паролю                  */
+/* ------------------------------------------------------------------ */
+const SESSION_TTL_DAYS = 30;
+const ADMIN_SESSION_HOURS = 12;
+const CODE_TTL_SECONDS = 15 * 60;
+
+function randomToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function normalizeLoginCode(raw) {
+  return String(raw ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function safeEqual(a, b) {
+  const left = Buffer.from(String(a ?? ""));
+  const right = Buffer.from(String(b ?? ""));
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
+
+async function createSession(userId) {
+  const token = randomToken();
+  const createdAt = nowSec();
+  const expiresAt = createdAt + SESSION_TTL_DAYS * 86400;
+  await dbRun(
+    "INSERT INTO web_sessions (token, user_id, created_at, expires_at) VALUES (?,?,?,?)",
+    [token, userId, createdAt, expiresAt]
+  );
+  return { token, expiresAt };
+}
+
+async function resolveSession(token) {
+  const value = String(token ?? "").trim();
+  if (!/^[a-f0-9]{64}$/.test(value)) return null;
+  const row = await dbGet("SELECT * FROM web_sessions WHERE token=?", [value]);
+  if (!row) return null;
+  if (row.expires_at < nowSec()) {
+    await dbRun("DELETE FROM web_sessions WHERE token=?", [value]);
+    return null;
+  }
+  const user = await dbGet(
+    "SELECT id, username, first_name, balance, points FROM users WHERE id=?",
+    [row.user_id]
+  );
+  return user || null;
+}
+
+async function createAdminSession(userId = null) {
+  const token = randomToken();
+  const createdAt = nowSec();
+  const expiresAt = createdAt + ADMIN_SESSION_HOURS * 3600;
+  await dbRun(
+    "INSERT INTO admin_sessions (token, user_id, created_at, expires_at) VALUES (?,?,?,?)",
+    [token, userId, createdAt, expiresAt]
+  );
+  return { token, expiresAt };
+}
+
+/** Возвращает { userId } или null. userId=null — вход по паролю. */
+async function resolveAdminSession(token) {
+  const value = String(token ?? "").trim();
+  if (!/^[a-f0-9]{64}$/.test(value)) return null;
+  const row = await dbGet("SELECT * FROM admin_sessions WHERE token=?", [value]);
+  if (!row) return null;
+  if (row.expires_at < nowSec()) {
+    await dbRun("DELETE FROM admin_sessions WHERE token=?", [value]);
+    return null;
+  }
+  // Если сессия привязана к Telegram ID, доступ проверяем заново:
+  // убрали ID из ADMIN_IDS — сессия сразу перестаёт работать.
+  if (row.user_id !== null && row.user_id !== undefined && !ADMIN_IDS.has(row.user_id)) {
+    await dbRun("DELETE FROM admin_sessions WHERE token=?", [value]);
+    return null;
+  }
+  return { userId: row.user_id ?? null };
+}
+
+/** Состояние админки: включена ли она и какие способы входа доступны. */
+function adminAccessInfo() {
+  const admins = ADMIN_IDS.size;
+  return {
+    available: ADMIN_PANEL_ENABLED && (admins > 0 || ADMIN_PASSWORD_LOGIN),
+    enabled: ADMIN_PANEL_ENABLED,
+    codeLogin: ADMIN_PANEL_ENABLED && admins > 0,
+    passwordLogin: ADMIN_PANEL_ENABLED && ADMIN_PASSWORD_LOGIN,
+    adminsConfigured: admins > 0,
+  };
+}
+
+/** Достаёт Bearer-токен из запроса. */
+function bearerToken(req) {
+  const header = String(req.headers.authorization || "");
+  if (header.toLowerCase().startsWith("bearer ")) return header.slice(7).trim();
+  return String(req.headers["x-session-token"] || "").trim();
+}
+
+async function requireUser(req, res) {
+  const user = await resolveSession(bearerToken(req));
+  if (!user) {
+    res.status(401).json({ error: "Нужен вход по коду из Telegram" });
+    return null;
+  }
+  return user;
+}
+
+async function requireAdmin(req, res) {
+  if (!(await resolveAdminSession(bearerToken(req)))) {
+    res.status(401).json({ error: "Нужен вход в админ-панель" });
+    return false;
+  }
+  return true;
+}
+
+function sanitizeAmount(raw, min = 1, max = MAX_BET * 10) {
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value)) return null;
+  if (value < min || value > max) return null;
+  return value;
+}
+
+async function getSetting(key, fallback = "") {
+  const row = await dbGet("SELECT value FROM settings WHERE key=?", [key]);
+  return row ? row.value : fallback;
+}
+
+async function setSetting(key, value) {
+  await dbRun(
+    "INSERT INTO settings (key, value, updated_at) VALUES (?,?,?) "
+    + "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+    [key, String(value ?? ""), nowSec()]
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -591,7 +829,17 @@ app.use(
 app.use(compression());
 app.use(cors());
 app.use(express.json({ limit: "256kb" }));
-app.use(express.static(path.join(__dirname, "web")));
+
+// React-приложение собирается в casino/webapp/dist (Vite).
+// Если сборки ещё нет — подскажем, как её сделать, вместо пустой страницы.
+const STATIC_DIR = path.join(__dirname, "webapp", "dist");
+const STATIC_INDEX = path.join(STATIC_DIR, "index.html");
+console.log(
+  fs.existsSync(STATIC_INDEX)
+    ? `🎨 Фронтенд: ${STATIC_DIR}`
+    : "⚠️  Нет сборки фронтенда: cd casino/webapp && npm install && npm run build"
+);
+app.use(express.static(STATIC_DIR));
 
 function broadcastRoom(room) {
   const socketIds = io.sockets.adapter.rooms.get(room.id);
@@ -1224,8 +1472,11 @@ io.on("connection", (socket) => {
         emitError(socket, "Слишком много попыток. Подождите немного.");
         return;
       }
-      const rawUserId = data.userId;
-      const name = sanitizeName(data.userName);
+      const sessionUser = await resolveSession(data.sessionToken);
+      const rawUserId = sessionUser ? sessionUser.id : data.userId;
+      const name = sessionUser
+        ? sanitizeName(data.userName || sessionUser.first_name || sessionUser.username)
+        : sanitizeName(data.userName);
       if (rawUserId === undefined || rawUserId === null || String(rawUserId).trim() === "") {
         emitError(socket, "Не передан идентификатор игрока");
         return;
@@ -1442,13 +1693,20 @@ io.on("connection", (socket) => {
       socket.disconnect(true);
       return;
     }
-    const expected = USING_FALLBACK_PASSWORD ? ADMIN_FALLBACK : ADMIN_PASSWORD;
-    const ok = typeof data.password === "string" && data.password === expected;
+    // Legacy socket-админка: только явно заданный пароль и включённая панель.
+    // Пароль по умолчанию и вход по коду сюда не пускаем — для них есть REST API.
+    const access = adminAccessInfo();
+    const ok =
+      access.available
+      && ADMIN_PASSWORD_LOGIN
+      && Boolean(ADMIN_PASSWORD)
+      && typeof data.password === "string"
+      && safeEqual(data.password, ADMIN_PASSWORD);
     if (ok) {
       adminSockets.add(socket.id);
       socket.emit("adminAuth", { success: true });
     } else {
-      socket.emit("adminAuth", { success: false, message: "Неверный пароль" });
+      socket.emit("adminAuth", { success: false, message: "Неверный пароль или вход отключён" });
     }
   });
 
@@ -1681,8 +1939,598 @@ app.get("/tma/init", (_req, res) => {
   });
 });
 
+/* ------------------------------------------------------------------ */
+/*  REST API: вход, игрок, донаты, админка                             */
+/* ------------------------------------------------------------------ */
+const httpHits = new Map();
+function httpRateLimit(req, key, limit, windowMs = 60000) {
+  const ip = req.ip || req.socket?.remoteAddress || "unknown";
+  const mapKey = `${ip}:${key}`;
+  const now = Date.now();
+  const entry = httpHits.get(mapKey) || { count: 0, reset: now + windowMs };
+  if (now > entry.reset) {
+    entry.count = 0;
+    entry.reset = now + windowMs;
+  }
+  entry.count += 1;
+  httpHits.set(mapKey, entry);
+  return entry.count <= limit;
+}
+
+let botUsername = String(process.env.BOT_USERNAME || "").trim().replace(/^@/, "");
+
+async function refreshBotUsername() {
+  if (botUsername) return botUsername;
+  const token = String(process.env.BOT_TOKEN || "").trim();
+  if (!token) return null;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = await res.json();
+    if (data?.ok && data.result?.username) {
+      botUsername = data.result.username;
+      console.log(`🤖 Бот для входа: @${botUsername}`);
+    }
+  } catch (err) {
+    console.warn(`⚠️  Не удалось получить @username бота: ${err.message}`);
+  }
+  return botUsername || null;
+}
+
+app.get("/api/bot", async (_req, res) => {
+  await refreshBotUsername();
+  res.json({
+    username: botUsername || null,
+    url: botUsername ? `https://t.me/${botUsername}` : null,
+  });
+});
+
+/* ------------------------------ Вход ------------------------------- */
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    if (!httpRateLimit(req, "auth", 12)) {
+      res.status(429).json({ error: "Слишком много попыток. Подождите минуту." });
+      return;
+    }
+    const code = normalizeLoginCode(req.body?.code);
+    if (!code) {
+      res.status(400).json({ error: "Введите код из Telegram" });
+      return;
+    }
+    const row = await dbGet("SELECT * FROM login_codes WHERE code=?", [code]);
+    if (!row) {
+      res.status(404).json({ error: "Код не найден. Получите новый в боте: /site" });
+      return;
+    }
+    if (row.kind && row.kind !== "player") {
+      res.status(403).json({
+        error: "Это код админ-панели. Введите его на странице /admin",
+      });
+      return;
+    }
+    if (row.used_at) {
+      res.status(410).json({ error: "Код уже использован. Получите новый в боте: /site" });
+      return;
+    }
+    if (row.expires_at < nowSec()) {
+      res.status(410).json({ error: "Код истёк. Получите новый в боте: /site" });
+      return;
+    }
+    if (!row.user_id) {
+      res.status(409).json({ error: "Код ещё не подтверждён в боте" });
+      return;
+    }
+    const name = row.first_name || row.username || `Игрок_${row.user_id}`;
+    const user = await ensureUser(row.user_id, name);
+    await dbRun("UPDATE login_codes SET used_at=? WHERE code=?", [nowSec(), code]);
+    const session = await createSession(user.id);
+    res.json({ ok: true, token: session.token, expiresAt: session.expiresAt, user });
+  } catch (err) {
+    console.error("auth/login:", err);
+    res.status(500).json({ error: "Не удалось выполнить вход" });
+  }
+});
+
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    res.json({ ok: true, user });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+app.post("/api/auth/logout", async (req, res) => {
+  const token = bearerToken(req);
+  if (token) await dbRun("DELETE FROM web_sessions WHERE token=?", [token]).catch(() => {});
+  res.json({ ok: true });
+});
+
+/* ----------------------------- Игроку ------------------------------ */
+app.get("/api/leaderboard", async (req, res) => {
+  try {
+    const kind = req.query.kind === "points" ? "points" : "balance";
+    const limit = Math.min(50, Math.max(3, Number.parseInt(req.query.limit, 10) || 10));
+    const rows = await dbAll(
+      `SELECT id, username, first_name, balance, points FROM users ORDER BY ${kind} DESC, id ASC LIMIT ?`,
+      [limit]
+    );
+    res.json({ kind, rows });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+app.get("/api/user/:id/stats", async (req, res) => {
+  try {
+    const userId = normalizeUserId(req.params.id);
+    const totals = await dbGet(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(CASE WHEN result='win' THEN 1 ELSE 0 END),0) AS wins,
+              COALESCE(SUM(CASE WHEN result='lose' THEN 1 ELSE 0 END),0) AS losses,
+              COALESCE(SUM(CASE WHEN result='tie' THEN 1 ELSE 0 END),0) AS ties,
+              COALESCE(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),0) AS won,
+              COALESCE(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),0) AS lost,
+              COALESCE(SUM(amount),0) AS net
+         FROM game_stats WHERE user_id=?`,
+      [userId]
+    );
+    const byGame = await dbAll(
+      `SELECT game_key, COUNT(*) AS cnt,
+              COALESCE(SUM(CASE WHEN result='win' THEN 1 ELSE 0 END),0) AS wins
+         FROM game_stats WHERE user_id=? GROUP BY game_key ORDER BY cnt DESC`,
+      [userId]
+    );
+    const recent = await dbAll(
+      `SELECT game_key, bet, result, amount, opponent, created_at
+         FROM game_stats WHERE user_id=? ORDER BY id DESC LIMIT 10`,
+      [userId]
+    );
+    res.json({ totals, byGame, recent });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+app.get("/api/me/transactions", async (req, res) => {
+  try {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const rows = await dbAll(
+      "SELECT id, amount, type, description, created_at FROM transactions WHERE user_id=? ORDER BY id DESC LIMIT 30",
+      [user.id]
+    );
+    res.json({ rows });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+/* ----------------------------- Донаты ------------------------------ */
+async function donateInfo() {
+  return {
+    cardType: await getSetting("DONATE_CARD_TYPE", process.env.DONATE_CARD_TYPE || "Сбербанк"),
+    cardNumber: await getSetting("DONATE_CARD_NUMBER", process.env.DONATE_CARD_NUMBER || ""),
+    cardName: await getSetting("DONATE_CARD_NAME", process.env.DONATE_CARD_NAME || ""),
+    min: Math.max(1, intEnv("DONATE_MIN", 100)),
+    max: Math.max(1, intEnv("DONATE_MAX", 100000)),
+    note: process.env.DONATE_NOTE || "Переведите сумму на карту, затем отправьте заявку. Админ подтвердит пополнение.",
+  };
+}
+
+app.get("/api/donate/info", async (req, res) => {
+  try {
+    const info = await donateInfo();
+    const user = await resolveSession(bearerToken(req));
+    let deposits = [];
+    if (user) {
+      deposits = await dbAll(
+        "SELECT id, amount, status, created_at, processed_at, source FROM deposits WHERE user_id=? ORDER BY id DESC LIMIT 10",
+        [user.id]
+      );
+    }
+    res.json({ ...info, deposits, loggedIn: Boolean(user) });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+app.post("/api/donate", async (req, res) => {
+  try {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    if (!httpRateLimit(req, "donate", 10, 3600000)) {
+      res.status(429).json({ error: "Слишком много заявок. Попробуйте позже." });
+      return;
+    }
+    const info = await donateInfo();
+    const amount = sanitizeAmount(req.body?.amount, info.min, info.max);
+    if (!amount) {
+      res.status(400).json({ error: `Сумма от ${info.min} до ${info.max} 💰` });
+      return;
+    }
+    const comment = String(req.body?.comment || "").slice(0, 200);
+    const result = await dbRun(
+      "INSERT INTO deposits (user_id, amount, status, created_at, source, comment) VALUES (?,?, 'pending', ?, 'site', ?)",
+      [user.id, amount, nowSec(), comment]
+    );
+    res.json({ ok: true, id: result.lastID, amount, status: "pending" });
+  } catch (err) {
+    console.error("donate:", err);
+    res.status(500).json({ error: "Не удалось создать заявку" });
+  }
+});
+
+/* ------------------------------ Админ ------------------------------ */
+app.get("/api/admin/status", (_req, res) => {
+  // Публичная информация: можно ли вообще открыть админку и как входить.
+  res.json(adminAccessInfo());
+});
+
+app.post("/api/admin/login", async (req, res) => {
+  try {
+    if (!httpRateLimit(req, "admin", 8, 60000)) {
+      res.status(429).json({ error: "Слишком много попыток. Подождите минуту." });
+      return;
+    }
+    const access = adminAccessInfo();
+    if (!access.available) {
+      res.status(403).json({
+        error: access.enabled
+          ? "Админ-панель не настроена: добавьте ADMIN_IDS в .env и перезапустите бота"
+          : "Админ-панель отключена (ADMIN_PANEL_ENABLED=0)",
+      });
+      return;
+    }
+
+    const code = normalizeLoginCode(req.body?.code);
+    const password = String(req.body?.password || "");
+
+    // 1) Основной вход — одноразовый код, который бот выдаёт только админам.
+    if (code) {
+      if (!access.codeLogin) {
+        res.status(403).json({ error: "Вход по коду недоступен: ADMIN_IDS не задан" });
+        return;
+      }
+      const row = await dbGet("SELECT * FROM login_codes WHERE code=?", [code]);
+      if (!row) {
+        res.status(404).json({ error: "Код не найден. Получите новый: /admin в боте" });
+        return;
+      }
+      if (row.kind !== "admin") {
+        res.status(403).json({ error: "Это код игрока, а не админ-панели" });
+        return;
+      }
+      if (row.used_at) {
+        res.status(410).json({ error: "Код уже использован. Получите новый: /admin в боте" });
+        return;
+      }
+      if (row.expires_at < nowSec()) {
+        res.status(410).json({ error: "Код истёк. Получите новый: /admin в боте" });
+        return;
+      }
+      // Повторная проверка: код выдаётся только админам, но ADMIN_IDS мог измениться.
+      if (!row.user_id || !ADMIN_IDS.has(row.user_id)) {
+        res.status(403).json({ error: "Этот Telegram-аккаунт не является администратором" });
+        return;
+      }
+      await dbRun("UPDATE login_codes SET used_at=? WHERE code=?", [nowSec(), code]);
+      const session = await createAdminSession(row.user_id);
+      res.json({
+        ok: true,
+        token: session.token,
+        expiresAt: session.expiresAt,
+        admin: { id: row.user_id, name: row.first_name || row.username || `ID ${row.user_id}` },
+      });
+      return;
+    }
+
+    // 2) Запасной вход по паролю (если ADMIN_PASSWORD задан явно).
+    if (password) {
+      if (!access.passwordLogin) {
+        res.status(403).json({
+          error: "Вход по паролю отключён. Используйте код из бота: /admin",
+        });
+        return;
+      }
+      if (!safeEqual(password, ADMIN_PASSWORD)) {
+        res.status(401).json({ error: "Неверный пароль" });
+        return;
+      }
+      const session = await createAdminSession(null);
+      res.json({ ok: true, token: session.token, expiresAt: session.expiresAt, admin: null });
+      return;
+    }
+
+    res.status(400).json({ error: "Введите код из бота или пароль" });
+  } catch (err) {
+    console.error("admin/login:", err);
+    res.status(500).json({ error: "Ошибка входа" });
+  }
+});
+
+app.post("/api/admin/logout", async (req, res) => {
+  const token = bearerToken(req);
+  if (/^[a-f0-9]{64}$/.test(token)) {
+    await dbRun("DELETE FROM admin_sessions WHERE token=?", [token]).catch(() => {});
+  }
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/overview", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  try {
+    const usersRow = await dbGet(
+      "SELECT COUNT(*) AS total, COALESCE(SUM(balance),0) AS balance, COALESCE(SUM(points),0) AS points FROM users"
+    );
+    const gamesRow = await dbGet(
+      "SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS net FROM game_stats"
+    );
+    const pendingDeposits = await dbGet("SELECT COUNT(*) AS cnt FROM deposits WHERE status='pending'");
+    const pendingWithdrawals = await dbGet("SELECT COUNT(*) AS cnt FROM withdrawals WHERE status='pending'");
+    res.json({
+      totalUsers: usersRow.total,
+      totalBalance: usersRow.balance,
+      totalPoints: usersRow.points,
+      totalGames: gamesRow.total,
+      totalRooms: rooms.size,
+      online: userSockets.size,
+      pendingDeposits: pendingDeposits.cnt,
+      pendingWithdrawals: pendingWithdrawals.cnt,
+      uptime: process.uptime(),
+      rooms: Array.from(rooms.values()).map((room) => room.toPublicJSON()),
+      card: await donateInfo(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+app.get("/api/admin/users", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  try {
+    const q = String(req.query.q || "").trim();
+    const limit = Math.min(100, Math.max(5, Number.parseInt(req.query.limit, 10) || 30));
+    let rows;
+    if (q) {
+      const numeric = /^-?\d+$/.test(q) ? Number(q) : null;
+      rows = await dbAll(
+        `SELECT id, username, first_name, balance, points FROM users
+          WHERE id=? OR username LIKE ? OR first_name LIKE ?
+          ORDER BY balance DESC LIMIT ?`,
+        [numeric, `%${q}%`, `%${q}%`, limit]
+      );
+    } else {
+      rows = await dbAll(
+        "SELECT id, username, first_name, balance, points FROM users ORDER BY balance DESC LIMIT ?",
+        [limit]
+      );
+    }
+    res.json({ rows });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+app.post("/api/admin/balance", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  try {
+    const userId = normalizeUserId(req.body?.userId);
+    const delta = Number.parseInt(req.body?.delta, 10);
+    if (!Number.isFinite(delta) || delta === 0) {
+      res.status(400).json({ error: "Некорректная сумма" });
+      return;
+    }
+    const user = await dbGet("SELECT id, first_name FROM users WHERE id=?", [userId]);
+    if (!user) {
+      res.status(404).json({ error: "Игрок не найден" });
+      return;
+    }
+    const reason = String(req.body?.reason || "Корректировка админом").slice(0, 200);
+    await withTx(async () => {
+      await dbRun("UPDATE users SET balance = balance + ? WHERE id=?", [delta, userId]);
+      await dbRun(
+        "INSERT INTO transactions (user_id, amount, type, description, admin_id, created_at) VALUES (?,?,?,?,NULL,?)",
+        [userId, delta, delta > 0 ? "deposit" : "admin", reason, nowSec()]
+      );
+    });
+    const row = await dbGet("SELECT balance FROM users WHERE id=?", [userId]);
+    res.json({ ok: true, balance: row.balance });
+  } catch (err) {
+    console.error("admin/balance:", err);
+    res.status(500).json({ error: "Ошибка операции" });
+  }
+});
+
+app.get("/api/admin/deposits", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  try {
+    const status = ["pending", "approved", "rejected"].includes(req.query.status)
+      ? req.query.status
+      : "pending";
+    const rows = await dbAll(
+      `SELECT d.id, d.user_id, d.amount, d.status, d.created_at, d.processed_at, d.source, d.comment,
+              COALESCE(u.first_name, u.username, CAST(u.id AS TEXT)) AS name
+         FROM deposits d LEFT JOIN users u ON u.id = d.user_id
+        WHERE d.status=? ORDER BY d.id DESC LIMIT 100`,
+      [status]
+    );
+    res.json({ rows });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+app.post("/api/admin/deposits/:id/resolve", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    const approve = Boolean(req.body?.approve);
+    const deposit = await dbGet("SELECT * FROM deposits WHERE id=? AND status='pending'", [id]);
+    if (!deposit) {
+      res.status(404).json({ error: "Заявка не найдена или уже обработана" });
+      return;
+    }
+    const ts = nowSec();
+    await withTx(async () => {
+      if (approve) {
+        await dbRun("UPDATE users SET balance = balance + ? WHERE id=?", [deposit.amount, deposit.user_id]);
+        await dbRun(
+          "INSERT INTO transactions (user_id, amount, type, description, admin_id, created_at) VALUES (?,?,?,?,NULL,?)",
+          [deposit.user_id, deposit.amount, "deposit", `Пополнение баланса #${id}`, ts]
+        );
+      }
+      await dbRun("UPDATE deposits SET status=?, processed_at=? WHERE id=?", [
+        approve ? "approved" : "rejected",
+        ts,
+        id,
+      ]);
+    });
+    res.json({ ok: true, status: approve ? "approved" : "rejected" });
+  } catch (err) {
+    console.error("admin/deposits:", err);
+    res.status(500).json({ error: "Ошибка обработки заявки" });
+  }
+});
+
+app.get("/api/admin/withdrawals", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  try {
+    const status = ["pending", "approved", "rejected"].includes(req.query.status)
+      ? req.query.status
+      : "pending";
+    const rows = await dbAll(
+      `SELECT w.id, w.user_id, w.amount, w.status, w.created_at, w.processed_at,
+              COALESCE(u.first_name, u.username, CAST(u.id AS TEXT)) AS name
+         FROM withdrawals w LEFT JOIN users u ON u.id = w.user_id
+        WHERE w.status=? ORDER BY w.id DESC LIMIT 100`,
+      [status]
+    );
+    res.json({ rows });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+app.post("/api/admin/withdrawals/:id/resolve", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    const approve = Boolean(req.body?.approve);
+    const row = await dbGet("SELECT * FROM withdrawals WHERE id=? AND status='pending'", [id]);
+    if (!row) {
+      res.status(404).json({ error: "Заявка не найдена или уже обработана" });
+      return;
+    }
+    const ts = nowSec();
+    await withTx(async () => {
+      if (!approve) {
+        await dbRun("UPDATE users SET balance = balance + ? WHERE id=?", [row.amount, row.user_id]);
+        await dbRun(
+          "INSERT INTO transactions (user_id, amount, type, description, admin_id, created_at) VALUES (?,?,?,?,NULL,?)",
+          [row.user_id, row.amount, "refund", `Отклонение заявки на вывод #${id}`, ts]
+        );
+      }
+      await dbRun("UPDATE withdrawals SET status=?, processed_at=? WHERE id=?", [
+        approve ? "approved" : "rejected",
+        ts,
+        id,
+      ]);
+    });
+    res.json({ ok: true, status: approve ? "approved" : "rejected" });
+  } catch (err) {
+    console.error("admin/withdrawals:", err);
+    res.status(500).json({ error: "Ошибка обработки заявки" });
+  }
+});
+
+app.get("/api/admin/transactions", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  try {
+    const rows = await dbAll(
+      `SELECT t.id, t.user_id, t.amount, t.type, t.description, t.created_at,
+              COALESCE(u.first_name, u.username, CAST(u.id AS TEXT)) AS name
+         FROM transactions t LEFT JOIN users u ON u.id = t.user_id
+         ORDER BY t.id DESC LIMIT 60`
+    );
+    res.json({ rows });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+app.post("/api/admin/broadcast", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  const message = String(req.body?.message || "").slice(0, 500).trim();
+  if (!message) {
+    res.status(400).json({ error: "Пустое сообщение" });
+    return;
+  }
+  io.emit("adminMessage", { message, type: "info" });
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/settings", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  res.json(await donateInfo());
+});
+
+app.put("/api/admin/settings", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  try {
+    const map = {
+      cardType: "DONATE_CARD_TYPE",
+      cardNumber: "DONATE_CARD_NUMBER",
+      cardName: "DONATE_CARD_NAME",
+      note: "DONATE_NOTE",
+    };
+    for (const [field, key] of Object.entries(map)) {
+      if (typeof req.body?.[field] === "string") {
+        await setSetting(key, req.body[field].slice(0, 300));
+      }
+    }
+    res.json({ ok: true, ...(await donateInfo()) });
+  } catch (err) {
+    res.status(500).json({ error: "Не удалось сохранить настройки" });
+  }
+});
+
+app.post("/api/admin/close-room", async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  try {
+    const room = rooms.get(String(req.body?.roomId || "").toUpperCase());
+    if (!room) {
+      res.status(404).json({ error: "Комната не найдена" });
+      return;
+    }
+    if (room.status === "playing") await refundRoom(room, "Комната закрыта админом");
+    else await deleteRoom(room);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Не удалось закрыть комнату" });
+  }
+});
+
 app.get("*", (_req, res) => {
-  res.sendFile(path.join(__dirname, "web", "index.html"));
+  if (!fs.existsSync(STATIC_INDEX)) {
+    res
+      .status(503)
+      .type("html")
+      .send(
+        "<!doctype html><meta charset='utf-8'><title>Casino Game</title>"
+          + "<body style='font-family:sans-serif;padding:2rem;background:#0b1120;color:#f8fafc'>"
+          + "<h1>Сайт ещё не собран</h1>"
+          + "<p>Выполните в папке проекта:</p>"
+          + "<pre style='background:#111a30;padding:1rem;border-radius:10px'>"
+          + "cd casino/webapp\nnpm install\nnpm run build</pre>"
+          + "<p>Или просто перезапустите <code>python bot/main.py</code> — он соберёт фронтенд сам.</p>"
+          + "</body>"
+      );
+    return;
+  }
+  res.sendFile(STATIC_INDEX);
 });
 
 /* ------------------------------------------------------------------ */
@@ -1726,10 +2574,11 @@ async function boot() {
   server.listen(PORT, () => {
     console.log(`🎰 Casino web server: http://localhost:${PORT}`);
     console.log(`💾 SQLite: ${DB_PATH}`);
-    console.log(`🛠  Admin:  http://localhost:${PORT}/admin.html`);
+    console.log(`🛠  Admin:  http://localhost:${PORT}/admin`);
     if (USING_FALLBACK_PASSWORD) {
-      console.log("🔑 Admin password: admin123 (default, задайте ADMIN_PASSWORD)");
+      console.log("🔑 Админ-вход: только по коду из бота (/admin → «Войти в веб-админку»).");
     }
+    refreshBotUsername();
   });
 }
 

@@ -38,11 +38,13 @@ Telegram-бот, веб-сайт, админ-панель и Telegram Mini App �
   <a href="ARCHITECTURE.md"><img alt="Architecture" src="https://img.shields.io/badge/🏗_ARCHITECTURE-архитектура-8b5cf6?style=for-the-badge"/></a>
   <a href="DEPLOY.md"><img alt="Deploy" src="https://img.shields.io/badge/📦_DEPLOY-развёртывание-10b981?style=for-the-badge"/></a>
   <a href="API.md"><img alt="API" src="https://img.shields.io/badge/🔗_API-справочник-f59e0b?style=for-the-badge"/></a>
+  <a href="BACKEND.md"><img alt="Backend" src="https://img.shields.io/badge/⚙️_BACKEND-онлайн--игра-0ea5e9?style=for-the-badge"/></a>
 </p>
 
 | Документ | О чём |
 |----------|-------|
 | [🏗 ARCHITECTURE.md](ARCHITECTURE.md) | Компоненты, потоки данных, Mermaid-схемы, схема БД |
+| [⚙️ BACKEND.md](BACKEND.md) | Как устроен онлайн-бэкенд: сокеты, комнаты, правила игр, выплаты, запуск бота и Docker |
 | [📦 DEPLOY.md](DEPLOY.md) | Развёртывание, `.env`, тома, backup, HTTPS, troubleshooting |
 | [🔗 API.md](API.md) | HTTP API, Socket.io события, модели данных, примеры |
 | [📖 README.md](README.md) | Этот файл — быстрый старт и обзор |
@@ -99,8 +101,8 @@ docker compose up -d --build
 |--------|------------------|
 | 🤖 Telegram-бот | polling, команды и игры в чате |
 | 🌐 Веб-сайт | http://localhost:3000 |
-| 🎮 Игровая комната | http://localhost:3000/game.html |
-| 🛠 Админ-панель | http://localhost:3000/admin.html |
+| 🎮 Игровая комната | http://localhost:3000/game |
+| 🛠 Админ-панель | http://localhost:3000/admin |
 | ❤️ Health check | http://localhost:3000/health |
 | 💾 SQLite | том `casino_game_data` → `/app/data/casino.db` |
 
@@ -151,7 +153,7 @@ python bot/main.py
 ```text
 🤖 Telegram-бот (polling)          → команды, игры в чате
 🌐 Сайт      http://localhost:3000 → блэкджек, дурак, кости
-🛠 Админка   http://localhost:3000/admin.html
+🛠 Админка   http://localhost:3000/admin
 💾 SQLite    data/casino.db        → общая база бота и сайта
 ```
 
@@ -262,14 +264,13 @@ CasinoGame/
 ├── casino/                 # 🎰 веб-казино
 │   ├── server.js           # Express + Socket.io + SQLite
 │   ├── package.json        # Node.js-зависимости
-│   └── web/                # фронтенд
-│       ├── index.html      # главная страница
-│       ├── game.html       # игровая комната
-│       ├── admin.html      # веб-админ-панель
-│       ├── style.css       # glassmorphism и анимации
-│       ├── app.js
-│       ├── game.js
-│       └── admin.js
+│   └── webapp/             # React-фронтенд (Vite)
+│       ├── src/
+│       │   ├── pages/      # HomePage, GamePage, AdminPage, …
+│       │   ├── components/ # шапка, навигация, карты
+│       │   ├── context/    # сессия игрока
+│       │   └── styles.css  # glassmorphism и адаптив
+│       └── dist/           # сборка, её отдаёт Express
 │
 ├── configs/                # ⚙️ конфигурация
 │   ├── config.py           # настройки из .env
@@ -288,6 +289,7 @@ CasinoGame/
 │
 ├── README.md
 ├── ARCHITECTURE.md
+├── BACKEND.md
 ├── DEPLOY.md
 └── API.md
 ```
@@ -320,7 +322,16 @@ CasinoGame/
 
 ## 🔐 Админ-панель
 
-Откройте `http://localhost:3000/admin.html` и введите пароль из `ADMIN_PASSWORD`.
+Откройте `http://localhost:3000/admin`. Вход — по одноразовому коду из бота:
+
+1. В Telegram отправьте `/admin`.
+2. Нажмите «🌐 Войти в веб-админку (код)».
+3. Введите код на сайте.
+
+Доступ есть только у Telegram ID из `ADMIN_IDS`. Если панель отключена
+(`ADMIN_PANEL_ENABLED=0`) или `ADMIN_IDS` пуст, сайт покажет «Админ-панель
+недоступна» и не пустит дальше. Запасной пароль `ADMIN_PASSWORD` работает только
+если он задан явно и включён `ADMIN_PASSWORD_LOGIN=1`.
 
 | Возможность | Описание |
 |-------------|----------|
@@ -424,8 +435,8 @@ ALL_WEB_E2E_OK
 |----------|---------|
 | Контейнер не стартует | `docker compose logs -f` — чаще всего не задан `BOT_TOKEN` |
 | Порт 3000 занят | Измените `"3000:3000"` на `"8080:3000"` в `docker-compose.yml` |
-| Не пускает в админку | Проверьте `ADMIN_PASSWORD` в `.env` и перезапустите контейнер |
-| `/game.html` или `/admin.html` → 404 | Пересоберите образ: `docker compose up -d --build` |
+| Не пускает в админку | Войдите по коду из бота (`/admin` → «Войти в веб-админку») или задайте `ADMIN_PASSWORD` |
+| `/game` или `/admin` → 503 | Не собрался фронтенд: `cd casino/webapp && npm install && npm run build` |
 | Данные пропали | Не используйте `docker compose down -v` — он удаляет том с базой |
 | Mini App не открывается | Нужен HTTPS-домен, а не `localhost` |
 
@@ -437,7 +448,7 @@ ALL_WEB_E2E_OK
 
 ### 🔗 Полезные ссылки
 
-[🏗 Архитектура](ARCHITECTURE.md) · [📦 Развёртывание](DEPLOY.md) · [🔗 API](API.md)
+[🏗 Архитектура](ARCHITECTURE.md) · [⚙️ Бэкенд](BACKEND.md) · [📦 Развёртывание](DEPLOY.md) · [🔗 API](API.md)
 
 <br/>
 

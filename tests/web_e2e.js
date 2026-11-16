@@ -362,6 +362,144 @@ async function testBotsSolo(host) {
   );
 }
 
+/* --------------------- REST: вход, донаты, админка ------------------ */
+const sqlite3 = require(path.join(ROOT, "casino", "node_modules", "sqlite3"));
+
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    const db = new sqlite3.Database(TMP_DB);
+    db.run(sql, params, function onDone(err) {
+      db.close();
+      if (err) reject(err);
+      else resolve(this);
+    });
+  });
+}
+
+async function httpJson(method, urlPath, { body, token } = {}) {
+  const headers = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(BASE + urlPath, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data = null;
+  try { data = await res.json(); } catch (_) { data = null; }
+  return { status: res.status, data };
+}
+
+async function insertLoginCode(code, userId) {
+  const now = Math.floor(Date.now() / 1000);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      await dbRun(
+        "INSERT INTO login_codes (code, user_id, username, first_name, status, created_at, expires_at) "
+        + "VALUES (?, ?, ?, ?, 'confirmed', ?, ?)",
+        [code, userId, "rest_tester", "REST Тест", now, now + 900]
+      );
+      return;
+    } catch (err) {
+      if (!/SQLITE_BUSY/.test(String(err.message))) throw err;
+      await sleep(150);
+    }
+  }
+  throw new Error("не удалось записать код входа в БД");
+}
+
+async function testRestApi() {
+  console.log("REST / ВХОД / ДОНАТЫ / АДМИНКА");
+
+  const unauth = await httpJson("GET", "/api/me/transactions");
+  check(unauth.status === 401, "без токена личный кабинет закрыт", String(unauth.status));
+
+  const badCode = await httpJson("POST", "/api/auth/login", { body: { code: "ZZZZZZZZ" } });
+  check(badCode.status === 404, "неизвестный код отклонён", String(badCode.status));
+
+  const code = "E2E" + Math.floor(10000 + Math.random() * 89999);
+  await insertLoginCode(code, 900001111);
+  const login = await httpJson("POST", "/api/auth/login", { body: { code } });
+  check(login.status === 200 && login.data?.token, "вход по коду из Telegram работает", String(login.status));
+  const token = login.data.token;
+  check(login.data?.user?.id === 900001111, "ID аккаунта = Telegram ID", JSON.stringify(login.data?.user));
+
+  const reuse = await httpJson("POST", "/api/auth/login", { body: { code } });
+  check(reuse.status === 410, "код одноразовый", String(reuse.status));
+
+  const me = await httpJson("GET", "/api/auth/me", { token });
+  check(me.status === 200 && me.data?.user?.id === 900001111, "сессия возвращает игрока");
+
+  const donate = await httpJson("POST", "/api/donate", { token, body: { amount: 500, comment: "e2e" } });
+  check(donate.status === 200 && donate.data?.id, "заявка на донат создаётся", String(donate.status));
+
+  const donateBad = await httpJson("POST", "/api/donate", { token, body: { amount: 0 } });
+  check(donateBad.status === 400, "нулевой донат отклонён", String(donateBad.status));
+
+  const board = await httpJson("GET", "/api/leaderboard?kind=balance&limit=5");
+  check(board.status === 200 && Array.isArray(board.data?.rows), "топ игроков доступен без входа");
+
+  const userStats = await httpJson("GET", "/api/user/900001111/stats");
+  check(userStats.status === 200 && userStats.data?.totals, "статистика игрока доступна");
+
+  const adminBad = await httpJson("POST", "/api/admin/login", { body: { password: "wrong" } });
+  check(adminBad.status === 401, "неверный пароль админа отклонён", String(adminBad.status));
+
+  const adminLogin = await httpJson("POST", "/api/admin/login", { body: { password: "e2e-pass" } });
+  check(adminLogin.status === 200 && adminLogin.data?.token, "вход в админку работает");
+  const adminToken = adminLogin.data.token;
+
+  const noAdmin = await httpJson("GET", "/api/admin/overview");
+  check(noAdmin.status === 401, "админка без токена закрыта", String(noAdmin.status));
+
+  const overview = await httpJson("GET", "/api/admin/overview", { token: adminToken });
+  check(overview.status === 200 && overview.data?.totalUsers >= 1, "обзор админки отдаёт статистику");
+
+  const credit = await httpJson("POST", "/api/admin/balance", {
+    token: adminToken,
+    body: { userId: 900001111, delta: 250, reason: "E2E начисление" },
+  });
+  check(credit.status === 200 && credit.data?.balance === 1000 + 250, "админ пополняет баланс",
+    JSON.stringify(credit.data));
+
+  const pending = await httpJson("GET", "/api/admin/deposits?status=pending", { token: adminToken });
+  const depositRow = (pending.data?.rows || []).find((row) => row.user_id === 900001111);
+  check(Boolean(depositRow), "донат виден в админке");
+
+  if (depositRow) {
+    const resolve = await httpJson("POST", `/api/admin/deposits/${depositRow.id}/resolve`, {
+      token: adminToken,
+      body: { approve: true },
+    });
+    check(resolve.status === 200 && resolve.data?.status === "approved", "админ подтверждает донат");
+
+    const approved = await httpJson("GET", "/api/admin/deposits?status=approved", { token: adminToken });
+    check(
+      (approved.data?.rows || []).some((row) => row.id === depositRow.id),
+      "подтверждённый донат попадает в историю"
+    );
+  }
+
+  const users = await httpJson("GET", "/api/admin/users?q=900001111", { token: adminToken });
+  const userRow = (users.data?.rows || []).find((row) => row.id === 900001111);
+  check(
+    userRow && userRow.balance === 1000 + 250 + 500,
+    "после доната баланс зачислен",
+    JSON.stringify(userRow)
+  );
+
+  const txs = await httpJson("GET", "/api/me/transactions", { token });
+  check(
+    (txs.data?.rows || []).some((row) => row.type === "deposit"),
+    "пополнение видно в операциях игрока"
+  );
+
+  const logout = await httpJson("POST", "/api/auth/logout", { token });
+  check(logout.status === 200, "выход из аккаунта работает");
+  const afterLogout = await httpJson("GET", "/api/auth/me", { token });
+  check(afterLogout.status === 401, "после выхода токен недействителен", String(afterLogout.status));
+}
+
 /* ------------------------------------------------------------------ */
 async function main() {
   console.log(`DB: ${TMP_DB}`);
@@ -375,6 +513,7 @@ async function main() {
     await testBlackjack(host, guest);
     await testDurak(host, guest);
     await testBotsSolo(host);
+    await testRestApi();
   } catch (err) {
     fail("исключение", err && err.message);
     console.error(err);

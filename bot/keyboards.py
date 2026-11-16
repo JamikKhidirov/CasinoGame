@@ -15,6 +15,8 @@ BTN_PROMO = "🎁 Промокод"
 BTN_TOP = "🏆 Топ игроков"
 BTN_CONVERT = "🔄 Обмен очков ⭐"
 BTN_DEPOSIT = "💳 Пополнить счёт"
+BTN_SITE = "🌐 Войти на сайт"
+BTN_MY_ID = "🆔 Мой ID"
 
 
 def main_kb() -> ReplyKeyboardMarkup:
@@ -26,6 +28,7 @@ def main_kb() -> ReplyKeyboardMarkup:
             [KeyboardButton(text=BTN_WITHDRAW), KeyboardButton(text=BTN_TRANSFER)],
             [KeyboardButton(text=BTN_DONATE), KeyboardButton(text=BTN_PROMO)],
             [KeyboardButton(text=BTN_DEPOSIT), KeyboardButton(text=BTN_CONVERT)],
+            [KeyboardButton(text=BTN_SITE), KeyboardButton(text=BTN_MY_ID)],
         ],
         resize_keyboard=True,
     )
@@ -79,6 +82,7 @@ def throw_kb(room) -> InlineKeyboardMarkup:
 def admin_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="🌐 Войти в веб-админку (код)", callback_data="admin:webcode")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="admin:stats")],
             [InlineKeyboardButton(text="⚙️ Настройки", callback_data="admin:settings")],
             [InlineKeyboardButton(text="💰 Пополнить баланс", callback_data="admin:deposit")],

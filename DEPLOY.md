@@ -13,6 +13,7 @@
 <a href="ARCHITECTURE.md"><img alt="Architecture" src="https://img.shields.io/badge/🏗_ARCHITECTURE-архитектура-8b5cf6?style=for-the-badge"/></a>
 <a href="DEPLOY.md"><img alt="Deploy" src="https://img.shields.io/badge/📦_DEPLOY-развёртывание-10b981?style=for-the-badge"/></a>
 <a href="API.md"><img alt="API" src="https://img.shields.io/badge/🔗_API-справочник-f59e0b?style=for-the-badge"/></a>
+<a href="BACKEND.md"><img alt="Backend" src="https://img.shields.io/badge/⚙️_BACKEND-онлайн--игра-0ea5e9?style=for-the-badge"/></a>
 
 </div>
 
@@ -97,7 +98,7 @@ flowchart TB
 ```text
 /app/start.sh
 └── python /app/bot/main.py      # Telegram-бот (aiogram 3, polling)
-    └── node /app/casino/server.js   # Express + Socket.io + casino/web/ + SQLite
+    └── node /app/casino/server.js   # Express + Socket.io + React (webapp/dist) + SQLite
 ```
 
 Если бот не может авторизоваться в Telegram (неверный `BOT_TOKEN`), сайт всё
@@ -108,7 +109,7 @@ flowchart TB
 | Процесс | Что делает |
 |---------|------------|
 | `python bot/main.py` | обрабатывает команды Telegram, игры в чате, админку бота; запускает и перезапускает сайт |
-| `node casino/server.js` | отдаёт сайт, `/game.html`, `/admin.html`, Socket.io, HTTP API, хранит комнаты |
+| `node casino/server.js` | отдаёт сайт (`/`, `/game`, `/admin`), Socket.io, HTTP API, хранит комнаты |
 | SQLite | общая база `/app/data/casino.db` для обоих процессов |
 
 > Внутри контейнера `PYTHONPATH=/app/configs:/app/bot` — так `config` из `configs/` и модули бота из `bot/` доступны без изменения импортов. Для локального запуска это не нужно: `bot/main.py` добавляет пути сам.
@@ -131,8 +132,11 @@ ADMIN_PASSWORD=change_me
 | Переменная | По умолчанию | Описание |
 |------------|--------------|----------|
 | `BOT_TOKEN` | — | **обязательно**: токен Telegram-бота |
-| `ADMIN_IDS` | — | Telegram ID админов через запятую |
-| `ADMIN_PASSWORD` | `admin123` | пароль `/admin.html`; если не задан — используется `admin123` с предупреждением в логах |
+| `ADMIN_IDS` | — | Telegram ID админов через запятую (главный вход в `/admin`) |
+| `ADMIN_PASSWORD` | — | запасной пароль `/admin`; без него доступ только по коду из бота |
+| `ADMIN_PASSWORD_LOGIN` | `1` | `0` — полностью отключить вход по паролю |
+| `ADMIN_PANEL_ENABLED` | `1` | `0` — закрыть веб-админку для всех |
+| `WEB_URL` | `http://localhost:3000` | публичный адрес сайта для кнопок бота |
 | `PORT` | `3000` | порт веб-сервера внутри контейнера |
 | `CORS_ORIGIN` | `*` | разрешённые origin для Socket.io |
 | `DB_PATH` | `/app/data/casino.db` | путь к SQLite (в Docker задан в Dockerfile) |
@@ -303,17 +307,21 @@ ports:
 
 ### Не пускает в админку
 
-- Проверьте `ADMIN_PASSWORD` в `.env`.
-- Если переменная не задана, используется `admin123` — в логах будет предупреждение.
+- Основной вход — одноразовый код: в боте `/admin` → «🌐 Войти в веб-админку (код)».
+- Убедитесь, что ваш Telegram ID есть в `ADMIN_IDS`, а `ADMIN_PANEL_ENABLED` не равен `0`.
+- Пароль работает только если `ADMIN_PASSWORD` задан явно и `ADMIN_PASSWORD_LOGIN=1`.
 - После изменения `.env` выполните `docker compose up -d` (контейнер пересоздастся).
 
-### `/game.html` или `/admin.html` возвращают 404
+### `/game` или `/admin` возвращают 503
 
-Значит запущен старый образ без этих файлов:
+Не собрался React-фронтенд. Пересоберите образ или соберите вручную:
 
 ```bash
 docker compose build --no-cache
 docker compose up -d
+
+# локально без Docker
+cd casino/webapp && npm install && npm run build
 ```
 
 ### Ошибка сборки `node-sqlite3`

@@ -22,3 +22,6 @@ data/*.db-shm
 npm-debug.log
 .DS_Store
 Thumbs.db
+
+# React build
+casino/webapp/dist/

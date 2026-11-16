@@ -129,6 +129,16 @@ async def test_db():
     check("отклонение не начисляет", database.get_balance(3) == 1250 - 200)
     check("повторная обработка пополнения", database.resolve_deposit(d, True, 9) is None)
 
+    # вход на сайт по одноразовому коду из Telegram
+    code, exp = database.create_login_code(1, "alice", "Alice")
+    check("код входа создан", len(code) == database.LOGIN_CODE_LENGTH and exp > int(time.time()))
+    row = database.get_login_code(code.lower())
+    check("код входа найден и привязан к ID", row is not None and row["user_id"] == 1)
+    check("нормализация кода", database.normalize_login_code(f" {code.lower()} ") == code)
+    check("неизвестный код", database.get_login_code("ZZZZZZZZ") is None)
+    code2, _ = database.create_login_code(2, "bob", "Bob")
+    check("коды уникальны", code2 != code)
+
     # настройки из админки
     import config as cfgx
     database.set_setting("RESULT_MSG_TTL", "9")

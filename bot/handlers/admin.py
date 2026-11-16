@@ -56,7 +56,23 @@ async def admin_panel(msg: Message, state: FSMContext):
     if not is_admin(msg.from_user.id):
         await msg.answer("🚫 У вас нет доступа к админ-панели.")
         return
-    await msg.answer("🛠 <b>Админ-панель</b>", reply_markup=admin_kb())
+    await msg.answer(
+        "🛠 <b>Админ-панель</b>\n\n"
+        "<blockquote>🌐 «Войти в веб-админку» — бот выдаст одноразовый код "
+        "для входа на сайт в разделе /admin.</blockquote>",
+        reply_markup=admin_kb(),
+    )
+
+
+@router.callback_query(F.data == "admin:webcode")
+async def admin_webcode(cb: CallbackQuery):
+    if not is_admin(cb.from_user.id):
+        await cb.answer("Нет доступа", show_alert=True)
+        return
+    from handlers.auth import send_admin_login_code
+
+    await send_admin_login_code(cb.message, cb.from_user)
+    await cb.answer()
 
 
 @router.callback_query(F.data == "admin:menu")
@@ -64,7 +80,11 @@ async def admin_menu_back(cb: CallbackQuery):
     if not is_admin(cb.from_user.id):
         await cb.answer("Нет доступа", show_alert=True)
         return
-    await cb.message.edit_text("🛠 <b>Админ-панель</b>", reply_markup=admin_kb())
+    await cb.message.edit_text(
+        "🛠 <b>Админ-панель</b>\n\n"
+        "<blockquote>🌐 «Войти в веб-админку» — одноразовый код для сайта (/admin).</blockquote>",
+        reply_markup=admin_kb(),
+    )
     await cb.answer()
 
 

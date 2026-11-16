@@ -26,7 +26,7 @@ flowchart TB
         TG["Telegram-чат"]
         TMA["Telegram Mini App"]
         WEB["Браузер / сайт"]
-        ADM["admin.html"]
+        ADM["React /admin"]
     end
 
     subgraph Container["🐳 Docker-контейнер casino-game"]
@@ -37,7 +37,7 @@ flowchart TB
         end
         subgraph Node["🟢 Node.js 20"]
             SRV["casino/server.js<br/>Express + Socket.io"]
-            FRONT["casino/web/<br/>index · game · admin"]
+            FRONT["casino/webapp/src<br/>React SPA → dist"]
         end
         DB[("💾 SQLite<br/>/app/data/casino.db")]
     end
@@ -45,7 +45,7 @@ flowchart TB
     TG -->|Bot API polling| MAIN
     TMA -->|HTTPS + WebSocket| SRV
     WEB -->|HTTPS + WebSocket| SRV
-    ADM -->|Socket.io admin| SRV
+    ADM -->|REST /api/admin + код из бота| SRV
     MAIN --> H
     MAIN --> SVC
     H --> DB
@@ -90,20 +90,25 @@ Node.js-сайт, ждёт `/health`, перезапускает его при �
 
 ### 2. Веб-сервер (`casino/server.js`)
 
-- Express отдаёт `casino/web/` и HTTP API.
+- Express отдаёт собранный React-фронтенд `casino/webapp/dist` и HTTP API.
 - Socket.io обслуживает мультиплеер в реальном времени.
 - В памяти держит `Map<roomId, Room>`; каждый снимок комнаты сохраняется в `web_rooms`.
 - При старте восстанавливает комнаты из `web_rooms`.
 - Списывает и начисляет баланс через те же таблицы `users`, `transactions`, `game_stats`.
 
-### 3. Фронтенд (`casino/web/`)
+### 3. Фронтенд (`casino/webapp/`)
+
+React + Vite. Исходники в `src/`, сборка в `dist/` (её отдаёт Express).
 
 | Файл | Назначение |
 |------|------------|
-| `index.html` + `app.js` | главная: создание/поиск комнат, имя, ставка, число игроков |
-| `game.html` + `game.js` | игровая комната: карты, кубики, действия, результаты |
-| `admin.html` + `admin.js` | вход по паролю, статистика, комнаты, балансы, рассылка, транзакции |
-| `style.css` | glassmorphism, анимации, адаптивная вёрстка |
+| `pages/HomePage.jsx` | главная: вход по коду, создание/поиск комнат, ставка, число игроков |
+| `pages/GamePage.jsx` | игровая комната: карты, кубики, действия, результаты |
+| `pages/AdminPage.jsx` | вход по коду из бота, статистика, комнаты, балансы, донаты, рассылка |
+| `styles.css` | glassmorphism, анимации, адаптивная вёрстка (мобильный таб-бар) |
+| `context/AppContext.jsx` | сессия игрока и токен |
+
+Подробности серверной части — в [BACKEND.md](BACKEND.md).
 
 ### 4. SQLite
 
@@ -144,7 +149,7 @@ sequenceDiagram
     S->>S: new Room(...) → rooms Map
     S->>DB: saveRoom() → web_rooms
     S-->>B: joined {roomId, userId}
-    B->>B: redirect → /game.html?room=...
+    B->>B: redirect → /game?room=...
 ```
 
 ### Старт игры и списание ставок
@@ -213,7 +218,7 @@ boot()
   └─ server.listen() — HTTP + Socket.io
 ```
 
-Если игра шла во время перезапуска и ставки уже были списаны, состояние комнаты сохраняется. Игроки могут переподключиться по ссылке `/game.html?room=...` и продолжить. Если все отключились более чем на 10 минут — сервер возвращает ставки.
+Если игра шла во время перезапуска и ставки уже были списаны, состояние комнаты сохраняется. Игроки могут переподключиться по ссылке `/game?room=...` и продолжить. Если все отключились более чем на 10 минут — сервер возвращает ставки.
 
 ---
 

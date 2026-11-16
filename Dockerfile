@@ -30,11 +30,20 @@ RUN pip install --no-cache-dir -r configs/requirements.txt
 COPY casino/package.json casino/package-lock.json ./casino/
 RUN cd casino && npm ci --omit=dev && npm cache clean --force
 
+# 2.1) Зависимости React-приложения нужны только на время сборки
+COPY casino/webapp/package.json casino/webapp/package-lock.json ./casino/webapp/
+RUN cd casino/webapp && npm ci --include=dev --no-audit --no-fund
+
 # 3) Исходники: бот, веб-казино, конфиги
 COPY configs/ ./configs/
 COPY bot/ ./bot/
 COPY casino/ ./casino/
 COPY start.sh ./
+
+# 3.1) Собираем React-фронтенд в casino/webapp/dist и убираем dev-зависимости
+RUN cd casino/webapp && npm run build \
+    && rm -rf node_modules \
+    && npm cache clean --force
 
 # 4) Непривилегированный пользователь + папка для SQLite
 RUN mkdir -p /app/data \

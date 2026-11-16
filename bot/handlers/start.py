@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from database import (
     claim_daily,
     ensure_user,
+    get_referrals,
     get_top_points,
     get_top_users,
     get_transactions,
@@ -60,8 +61,15 @@ async def cmd_start(msg: Message, state: FSMContext, command: CommandObject):
     user = ensure_user(msg.from_user.id, msg.from_user.username, msg.from_user.first_name)
     games_line = " · ".join(f"{g['emoji']} {g['name']}" for g in GAMES.values())
 
+    # Ссылка «войти на сайт» из веб-приложения: t.me/<bot>?start=login
+    ref_arg = (command.args or "").strip()
+    if ref_arg.lower() == "login":
+        from handlers.auth import send_login_code
+
+        await send_login_code(msg)
+        return
+
     # реферальная ссылка
-    ref_arg = command.args
     if ref_arg and ref_arg.isdigit() and int(ref_arg) != msg.from_user.id:
         if set_referrer(msg.from_user.id, int(ref_arg)):
             await msg.bot.send_message(
@@ -81,6 +89,7 @@ async def cmd_start(msg: Message, state: FSMContext, command: CommandObject):
         f"📊 Моя статистика и топ игроков\n"
         f"💸 Вывод средств (Telegram Premium) и переводы\n"
         f"💝 Донат и 🎁 промокоды\n"
+        f"🌐 <b>Войти на сайт</b> — /site: бот пришлёт код для входа в веб-казино\n"
         f"🎁 <b>/daily</b> — ежедневный бонус\n"
         f"👥 <b>Пригласи друга</b> — получи бонус за каждого",
         reply_markup=main_kb(),

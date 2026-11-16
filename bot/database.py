@@ -1,4 +1,5 @@
 import os
+import secrets
 import sqlite3
 import threading
 import time
@@ -122,9 +123,33 @@ def init_db() -> None:
                 updated_at INTEGER NOT NULL
             );
 
+            -- Одноразовые коды входа на сайт: бот присылает код в ЛС,
+            -- пользователь вводит его на сайте и получает свой Telegram ID.
+            CREATE TABLE IF NOT EXISTS login_codes (
+                code TEXT PRIMARY KEY,
+                user_id INTEGER,
+                username TEXT,
+                first_name TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                kind TEXT NOT NULL DEFAULT 'player',
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                used_at INTEGER
+            );
+
+            -- Сессии сайта: токен привязан к Telegram ID и общему кошельку.
+            CREATE TABLE IF NOT EXISTS web_sessions (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tx_user ON transactions (user_id, id);
             CREATE INDEX IF NOT EXISTS idx_stats_user ON game_stats (user_id, id);
             CREATE INDEX IF NOT EXISTS idx_wd_status ON withdrawals (status);
+            CREATE INDEX IF NOT EXISTS idx_login_codes_user ON login_codes (user_id);
+            CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions (user_id);
             """
         )
         conn.commit()
@@ -139,6 +164,10 @@ def init_db() -> None:
             conn.commit()
         if "referrer_id" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER")
+            conn.commit()
+        code_cols = [r[1] for r in conn.execute("PRAGMA table_info(login_codes)").fetchall()]
+        if "kind" not in code_cols:
+            conn.execute("ALTER TABLE login_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'player'")
             conn.commit()
         try:
             conn.execute("""
@@ -776,3 +805,62 @@ def record_banner_send(banner_id: int, user_id: int) -> None:
             (banner_id, user_id, int(time.time())),
         )
         _get_conn().commit()
+
+
+# ============ Вход на сайт по коду (ID = Telegram ID) ============
+
+LOGIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+LOGIN_CODE_LENGTH = 8
+LOGIN_CODE_TTL = 900  # 15 минут
+
+
+def normalize_login_code(raw: str) -> str:
+    """Приводит ввод пользователя к виду кода: без пробелов и дефисов, в верхнем регистре."""
+    return "".join(ch for ch in str(raw or "").upper() if ch.isalnum())
+
+
+def create_login_code(
+    user_id: int,
+    username: str | None = None,
+    first_name: str | None = None,
+    ttl: int = LOGIN_CODE_TTL,
+    kind: str = "player",
+) -> tuple[str, int]:
+    """Создаёт одноразовый код входа под конкретный Telegram-аккаунт.
+
+    Код сразу привязан к user_id, поэтому после ввода на сайте открывается
+    тот же аккаунт, что и в боте, — с общей базой и кошельком.
+    kind='admin' — код только для веб-админки (проверяется ADMIN_IDS).
+    Возвращает (код, unixtime истечения).
+    """
+    now = int(time.time())
+    expires_at = now + ttl
+    with _lock:
+        conn = _get_conn()
+        # чистим старые коды, чтобы таблица не росла бесконечно
+        conn.execute("DELETE FROM login_codes WHERE expires_at < ?", (now - 86400,))
+        for _ in range(20):
+            code = "".join(secrets.choice(LOGIN_CODE_ALPHABET) for _ in range(LOGIN_CODE_LENGTH))
+            try:
+                conn.execute(
+                    "INSERT INTO login_codes "
+                    "(code, user_id, username, first_name, status, kind, created_at, expires_at) "
+                    "VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?)",
+                    (code, user_id, username, first_name, kind, now, expires_at),
+                )
+                conn.commit()
+                return code, expires_at
+            except sqlite3.IntegrityError:
+                continue
+    raise RuntimeError("Не удалось создать код входа, попробуйте ещё раз")
+
+
+def get_login_code(code: str) -> dict | None:
+    code = normalize_login_code(code)
+    if not code:
+        return None
+    with _lock:
+        row = _get_conn().execute(
+            "SELECT * FROM login_codes WHERE code=?", (code,)
+        ).fetchone()
+        return dict(row) if row else None
