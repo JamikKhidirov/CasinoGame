@@ -1195,6 +1195,43 @@ code {
   font-size: 0.85em;
 }
 
+/* ------------------------- Режим и выводы -------------------------- */
+.chip-mode {
+  color: #fcd34d;
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.mode-box {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.85rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(59, 130, 246, 0.07);
+}
+
+.mode-box p {
+  margin: 0;
+}
+
+.form-subtitle {
+  margin: 0.4rem 0 -0.2rem;
+  font-size: 0.95rem;
+  color: #cbd5f5;
+}
+
+.payout-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  font-size: 0.84rem;
+  color: #cbd5f5;
+  overflow-wrap: anywhere;
+}
+
 /* ------------------------- Телефоны (узкие экраны) ------------------ */
 @media (max-width: 520px) {
   .topbar {

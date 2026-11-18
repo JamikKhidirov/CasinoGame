@@ -18,14 +18,16 @@
 
 <img alt="SQLite" src="https://img.shields.io/badge/SQLite-WAL-003B57?style=for-the-badge&logo=sqlite&logoColor=white"/>
 <img alt="Docker" src="https://img.shields.io/badge/Docker-one%20command-2496ED?style=for-the-badge&logo=docker&logoColor=white"/>
-<img alt="Tests" src="https://img.shields.io/badge/tests-109%20passed-10B981?style=for-the-badge&logo=checkmarx&logoColor=white"/>
+<img alt="Tests" src="https://img.shields.io/badge/tests-177%20passed-10B981?style=for-the-badge&logo=checkmarx&logoColor=white"/>
 <img alt="Mini App" src="https://img.shields.io/badge/Telegram-Mini%20App-26A5E4?style=for-the-badge&logo=telegram&logoColor=white"/>
 
 <br/><br/>
 
 **Блэкджек, дурак и кости для 2–4 игроков в реальном времени.**  
-Telegram-бот, веб-сайт, админ-панель и Telegram Mini App — в **одном Docker-контейнере**.  
-Балансы, история игр и активные комнаты сохраняются в **SQLite**.
+Telegram-бот, веб-сайт, касса с выводом на карту/счёт, админ-панель и Telegram
+Mini App — в **одном Docker-контейнере**.  
+Балансы, история игр и активные комнаты сохраняются в **SQLite**. Два режима:
+«Бизнес» с пополнениями и «Развлечение» — только игра.
 
 </div>
 
@@ -39,15 +41,21 @@ Telegram-бот, веб-сайт, админ-панель и Telegram Mini App �
   <a href="DEPLOY.md"><img alt="Deploy" src="https://img.shields.io/badge/📦_DEPLOY-развёртывание-10b981?style=for-the-badge"/></a>
   <a href="API.md"><img alt="API" src="https://img.shields.io/badge/🔗_API-справочник-f59e0b?style=for-the-badge"/></a>
   <a href="BACKEND.md"><img alt="Backend" src="https://img.shields.io/badge/⚙️_BACKEND-онлайн--игра-0ea5e9?style=for-the-badge"/></a>
+  <a href="BACKEND_TUTORIAL.md"><img alt="Tutorial" src="https://img.shields.io/badge/🎓_TUTORIAL-обучение-ec4899?style=for-the-badge"/></a>
 </p>
 
 | Документ | О чём |
 |----------|-------|
 | [🏗 ARCHITECTURE.md](ARCHITECTURE.md) | Компоненты, потоки данных, Mermaid-схемы, схема БД |
 | [⚙️ BACKEND.md](BACKEND.md) | Как устроен онлайн-бэкенд: сокеты, комнаты, правила игр, выплаты, запуск бота и Docker |
+| [🎓 BACKEND_TUTORIAL.md](BACKEND_TUTORIAL.md) | Пошаговый обучающий гайд: как собрать такой бэкенд самому, с анимациями |
 | [📦 DEPLOY.md](DEPLOY.md) | Развёртывание, `.env`, тома, backup, HTTPS, troubleshooting |
+| [🚀 deploy/VPS.md](deploy/VPS.md) | Пошаговый деплой на свой VPS: Docker, Caddy, домен, HTTPS, cron-backup |
 | [🔗 API.md](API.md) | HTTP API, Socket.io события, модели данных, примеры |
 | [📖 README.md](README.md) | Этот файл — быстрый старт и обзор |
+
+Живые анимации бэкенда: [🎬 полный цикл комнаты](assets/backend-demo.html) ·
+[🗺 схема потока](assets/backend-flow.svg).
 
 ---
 
@@ -58,8 +66,12 @@ Telegram-бот, веб-сайт, админ-панель и Telegram Mini App �
 | 🎮 | **3 игры** | Блэкджек 21, дурак, кости — 2–4 игрока |
 | ⚡ | **Реальное время** | Socket.io: ходы приходят мгновенно всем |
 | 🤖 | **Telegram-бот** | aiogram 3, игры в чате, ежедневный бонус, рефералы |
+| 🔑 | **Вход по коду** | Одноразовый код из бота, общий аккаунт и кошелёк с сайтом |
 | 📱 | **Mini App** | Общий баланс и Telegram ID с ботом |
-| 🛠 | **Админ-панель** | Веб + Telegram-админка, статистика, балансы, рассылки |
+| 💳 | **Касса** | Пополнение и вывод на карту или банковский счёт |
+| 🎛 | **2 режима** | «Бизнес» — деньги включены, «Развлечение» — только игра |
+| 🛠 | **Админ-панель** | Веб + Telegram-админка, статистика, балансы, заявки, режим |
+| 🧹 | **Чистые комнаты** | Пустые комнаты исчезают из списка и удаляются автоматически |
 | 💾 | **SQLite** | WAL-режим, одна база для бота и веба |
 | 🐳 | **Один контейнер** | Бот + веб + Socket.io + БД одной командой |
 | 🎨 | **Glassmorphism** | Анимации, адаптив, тёмная тема |
@@ -131,6 +143,29 @@ docker compose up -d --build
 3. Порт — `3000`, постоянное хранилище уже примонтировано в `/app/data`.
 
 Подробнее: [DEPLOY.md](DEPLOY.md#-деплой-в-amvera-cloud).
+
+</details>
+
+<details>
+<summary>🌍 Запуск на своём VPS с HTTPS (Caddy)</summary>
+
+Production-стек: приложение + Caddy с автоматическим сертификатом Let's Encrypt.
+Порт `3000` наружу не публикуется, WebSocket и Socket.io проксируются автоматически.
+
+```bash
+git clone https://github.com/JamikKhidirov/CasinoGame.git
+cd CasinoGame
+sudo bash deploy/install.sh
+```
+
+Скрипт установит Docker, спросит `BOT_TOKEN`, `ADMIN_IDS`, пароль и домен,
+создаст `.env`, соберёт образ и поднимет сайт.
+
+Требования: Ubuntu 22.04/24.04, 1–2 ГБ RAM, публичный IPv4.
+Домен не обязателен — можно взять бесплатный `203-0-113-10.sslip.io`.
+
+📚 Полная инструкция: [deploy/VPS.md](deploy/VPS.md) — DNS, firewall, Telegram
+Mini App, обновление, backup, логи и troubleshooting.
 
 </details>
 
@@ -266,19 +301,21 @@ CasinoGame/
 │   ├── package.json        # Node.js-зависимости
 │   └── webapp/             # React-фронтенд (Vite)
 │       ├── src/
-│       │   ├── pages/      # HomePage, GamePage, AdminPage, …
+│       │   ├── pages/      # HomePage, GamePage, DonatePage, AdminPage, …
 │       │   ├── components/ # шапка, навигация, карты
-│       │   ├── context/    # сессия игрока
+│       │   ├── context/    # сессия игрока и режим работы
 │       │   └── styles.css  # glassmorphism и адаптив
 │       └── dist/           # сборка, её отдаёт Express
 │
 ├── configs/                # ⚙️ конфигурация
-│   ├── config.py           # настройки из .env
+│   ├── config.py           # настройки из .env + runtime из БД
 │   └── requirements.txt    # Python-зависимости
 │
 ├── data/                   # 💾 SQLite (casino.db, final_test.db)
-├── tests/                  # 🧪 run_tests.py (109) + web_e2e.js (e2e)
-├── assets/                 # 🎞 анимированный баннер документации
+├── tests/                  # 🧪 run_tests.py (117) + web_e2e.js (60)
+├── assets/                 # 🎞 баннеры + анимации бэкенда
+│   ├── backend-demo.html   # полный цикл комнаты
+│   └── backend-flow.svg    # схема потока запроса
 │
 ├── Dockerfile              # Python + Node.js в одном образе
 ├── docker-compose.yml      # один сервис = весь стек
@@ -290,6 +327,7 @@ CasinoGame/
 ├── README.md
 ├── ARCHITECTURE.md
 ├── BACKEND.md
+├── BACKEND_TUTORIAL.md
 ├── DEPLOY.md
 └── API.md
 ```
@@ -309,9 +347,11 @@ CasinoGame/
 | `game_stats` | история игр и статистика |
 | `web_rooms` | снимки активных веб-комнат (переживают перезапуск) |
 | `promocodes`, `promo_uses` | промокоды |
-| `deposits`, `withdrawals` | заявки на пополнение и вывод |
+| `deposits` | заявки на пополнение (`source`: сайт или бот) |
+| `withdrawals` | заявки на вывод + реквизиты карты/счёта и получатель |
+| `login_codes`, `web_sessions` | коды входа и сессии сайта/админки |
 | `banners`, `banner_sends` | баннеры и рассылки |
-| `settings` | настройки, изменяемые админом |
+| `settings` | настройки админа, включая режим `APP_MODE` |
 
 Файл базы лежит в Docker-томе `casino_game_data`. Пересборка контейнера **не удаляет** данные. Backup и восстановление — в [DEPLOY.md](DEPLOY.md#-backup-и-восстановление).
 
@@ -335,9 +375,13 @@ CasinoGame/
 
 | Возможность | Описание |
 |-------------|----------|
-| 📊 Статистика | пользователи, суммарный баланс, комнаты, игры |
+| 📊 Статистика | пользователи, суммарный баланс, комнаты, игры, текущий режим |
 | 🔴 Активные комнаты | список и принудительное закрытие с возвратом ставок |
-| 💳 Баланс игрока | изменение по ID с записью в `transactions` |
+| 💳 Заявки на пополнение | подтверждение с зачислением на баланс |
+| 💸 Заявки на вывод | карта/счёт, имя получателя, банк; подтверждение или возврат |
+| 👥 Баланс игрока | изменение по ID с записью в `transactions` |
+| 🎛 Режим работы | переключатель «Бизнес / Развлечение» без перезапуска |
+| ⚙️ Реквизиты | карта для пополнения, лимит и подсказка для вывода |
 | 📢 Рассылка | сообщение всем онлайн-игрокам сайта |
 | 🧾 Транзакции | последние 50 операций |
 
@@ -348,12 +392,13 @@ Telegram-админка бота (`/admin`) остаётся отдельной 
 ## 📱 Telegram Mini App
 
 1. Задайте `BOT_TOKEN` в `.env`.
-2. Поднимите стек: `docker compose up -d --build`.
+2. Поднимите стек: `docker compose up -d --build` (локально) или `sudo bash deploy/install.sh` (VPS с HTTPS).
 3. Сайт должен быть доступен по **HTTPS** на публичном домене (Telegram требует HTTPS).
 4. В `@BotFather`: `/setmenubutton` → укажите URL вашего сайта.
 5. Пользователь открывает Mini App из бота — используется его Telegram-имя и ID.
 
 Подробнее про HTTPS и reverse proxy: [DEPLOY.md](DEPLOY.md#-telegram-mini-app-и-https).
+Пошаговый деплой на VPS с Caddy: [deploy/VPS.md](deploy/VPS.md).
 
 ---
 
@@ -366,13 +411,19 @@ Telegram-админка бота (`/admin`) остаётся отдельной 
 |------------|--------------|----------|
 | `BOT_TOKEN` | — | токен от @BotFather |
 | `ADMIN_IDS` | — | Telegram ID админов через запятую |
-| `ADMIN_PASSWORD` | `admin123` | пароль веб-админки (смените!) |
+| `ADMIN_PASSWORD` | — | запасной пароль веб-админки (только если задан явно) |
+| `ADMIN_PANEL_ENABLED` | `1` | `0` — полностью закрыть `/admin` |
+| `APP_MODE` | `business` | `business` — деньги включены; `fun` — только игра |
+| `WEB_URL` | `http://localhost:3000` | публичный адрес сайта для кнопок бота |
+| `DOMAIN` | — | домен для VPS-стека; Caddy выпустит HTTPS (`deploy/VPS.md`) |
 | `PORT` | `3000` | порт веб-сервера |
 | `DB_PATH` | `/app/data/casino.db` | путь к SQLite |
 | `START_BALANCE` | `1000` | стартовый баланс 💰 |
 | `START_POINTS` | `2000` | стартовые очки ⭐ |
 | `MIN_BET` / `MAX_BET` | `1` / `1000000` | лимиты ставок |
 | `COMMISSION_PERCENT` | `0` | комиссия казино, % |
+| `WITHDRAW_MIN` | `1000` | минимальная сумма вывода |
+| `WITHDRAW_NOTE` | «Выплата на карту или счёт…» | подсказка на странице вывода |
 | `MOVE_TIMEOUT` | `30` | секунд до авто-хода |
 | `CORS_ORIGIN` | `*` | CORS для Socket.io |
 
@@ -395,13 +446,14 @@ python tests/run_tests.py
 Ожидаемый результат:
 
 ```text
-ВСЕ ТЕСТЫ ПРОЙДЕНЫ (109)
+ВСЕ ТЕСТЫ ПРОЙДЕНЫ (117)
 ```
 
 ### E2E-тест веб-казино
 
 Проверяет настоящий сервер через Socket.io: партии в кости, блэкджек и дурака
-двумя игроками плюс соло-игру с ботом (нужен `npm install` в `casino/`):
+двумя игроками, соло-игру с ботом, вход по коду, кассу, вывод, режим и очистку
+комнат (нужен `npm install` в `casino/`):
 
 ```bash
 node tests/web_e2e.js
@@ -412,7 +464,7 @@ cd casino && npm test
 Ожидаемый результат:
 
 ```text
-ПРОЙДЕНО: 21, ПРОВАЛЕНО: 0
+ПРОЙДЕНО: 60, ПРОВАЛЕНО: 0
 ALL_WEB_E2E_OK
 ```
 
@@ -420,8 +472,10 @@ ALL_WEB_E2E_OK
 <summary>Что покрывают тесты</summary>
 
 - база данных, пользователи, балансы и очки;
-- депозиты, выводы, переводы, промокоды;
+- депозиты, вывод на карту/счёт, переводы, промокоды;
+- режим «Бизнес / Развлечение» и серверные запреты в `fun`;
 - комнаты, ставки, ничьи, игра с ботом;
+- очистка комнат: скрытие без онлайна и удаление после выхода;
 - статистика, баннеры и рассылки;
 - настройки, изменяемые админом.
 
@@ -448,7 +502,7 @@ ALL_WEB_E2E_OK
 
 ### 🔗 Полезные ссылки
 
-[🏗 Архитектура](ARCHITECTURE.md) · [⚙️ Бэкенд](BACKEND.md) · [📦 Развёртывание](DEPLOY.md) · [🔗 API](API.md)
+[🏗 Архитектура](ARCHITECTURE.md) · [⚙️ Бэкенд](BACKEND.md) · [🎓 Обучение](BACKEND_TUTORIAL.md) · [📦 Развёртывание](DEPLOY.md) · [🔗 API](API.md)
 
 <br/>
 

@@ -85,6 +85,9 @@ def _card_number_fmt(raw: str) -> str:
 @router.message(F.text == BTN_DONATE)
 async def donate(msg: Message, state: FSMContext):
     await state.clear()
+    if not config.payments_enabled():
+        await msg.answer(config.FUN_MODE_MESSAGE, reply_markup=main_kb())
+        return
     user = ensure_user(msg.from_user.id, msg.from_user.username, msg.from_user.first_name)
     await state.set_state(Donate.amount)
     text = (

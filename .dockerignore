@@ -31,6 +31,8 @@ npm-debug.log
 Dockerfile
 .dockerignore
 docker-compose.yml
+docker-compose.vps.yml
 README.md
 *.md
 assets/
+backups/

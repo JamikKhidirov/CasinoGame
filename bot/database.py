@@ -72,7 +72,12 @@ def init_db() -> None:
                 status TEXT NOT NULL DEFAULT 'pending',
                 created_at INTEGER NOT NULL,
                 processed_at INTEGER,
-                admin_id INTEGER
+                admin_id INTEGER,
+                payout_method TEXT,
+                payout_target TEXT,
+                payout_name TEXT,
+                payout_bank TEXT,
+                source TEXT
             );
 
             CREATE TABLE IF NOT EXISTS deposits (
@@ -169,6 +174,11 @@ def init_db() -> None:
         if "kind" not in code_cols:
             conn.execute("ALTER TABLE login_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'player'")
             conn.commit()
+        wd_cols = [r[1] for r in conn.execute("PRAGMA table_info(withdrawals)").fetchall()]
+        for column in ("payout_method", "payout_target", "payout_name", "payout_bank", "source"):
+            if column not in wd_cols:
+                conn.execute(f"ALTER TABLE withdrawals ADD COLUMN {column} TEXT")
+                conn.commit()
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS referrals (
@@ -582,11 +592,31 @@ def get_top_points(limit: int = 10) -> list[dict]:
 
 # ============ Выводы ============
 
-def create_withdrawal(user_id: int, amount: int) -> int:
+def create_withdrawal(
+    user_id: int,
+    amount: int,
+    payout_method: str = "card",
+    payout_target: str = "",
+    payout_name: str = "",
+    payout_bank: str = "",
+    source: str = "bot",
+) -> int:
     with _lock:
         cur = _get_conn().execute(
-            "INSERT INTO withdrawals (user_id, amount, status, created_at) VALUES (?, ?, 'pending', ?)",
-            (user_id, amount, int(time.time())),
+            "INSERT INTO withdrawals "
+            "(user_id, amount, status, created_at, payout_method, payout_target, "
+            " payout_name, payout_bank, source) "
+            "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?)",
+            (
+                user_id,
+                amount,
+                int(time.time()),
+                payout_method,
+                payout_target,
+                payout_name,
+                payout_bank,
+                source,
+            ),
         )
         _get_conn().commit()
         return cur.lastrowid

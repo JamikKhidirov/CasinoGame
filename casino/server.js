@@ -223,7 +223,12 @@ async function initDb() {
       status TEXT NOT NULL DEFAULT 'pending',
       created_at INTEGER NOT NULL,
       processed_at INTEGER,
-      admin_id INTEGER
+      admin_id INTEGER,
+      payout_method TEXT,
+      payout_target TEXT,
+      payout_name TEXT,
+      payout_bank TEXT,
+      source TEXT
     )
   `);
   await dbRun(`
@@ -252,6 +257,19 @@ async function initDb() {
   }
   if (!depositColumnNames.has("comment")) {
     await dbRun("ALTER TABLE deposits ADD COLUMN comment TEXT");
+  }
+  const withdrawalColumns = await dbAll("PRAGMA table_info(withdrawals)");
+  const withdrawalColumnNames = new Set(withdrawalColumns.map((column) => column.name));
+  for (const [name, type] of [
+    ["payout_method", "TEXT"],
+    ["payout_target", "TEXT"],
+    ["payout_name", "TEXT"],
+    ["payout_bank", "TEXT"],
+    ["source", "TEXT"],
+  ]) {
+    if (!withdrawalColumnNames.has(name)) {
+      await dbRun(`ALTER TABLE withdrawals ADD COLUMN ${name} ${type}`);
+    }
   }
   const codeColumns = await dbAll("PRAGMA table_info(login_codes)");
   if (!codeColumns.some((column) => column.name === "kind")) {
@@ -475,6 +493,47 @@ async function setSetting(key, value) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Режим работы: «Бизнес» / «Развлечение»                             */
+/* ------------------------------------------------------------------ */
+// В бизнес-режиме работают донаты, пополнения и выводы.
+// В режиме «Развлечение» играют только ради веселья — деньги не принимаются.
+const APP_MODES = new Set(["business", "fun"]);
+
+async function getAppMode() {
+  const raw = String(
+    await getSetting("APP_MODE", process.env.APP_MODE || "business")
+  ).trim().toLowerCase();
+  return APP_MODES.has(raw) ? raw : "business";
+}
+
+async function paymentsEnabled() {
+  return (await getAppMode()) === "business";
+}
+
+function funModeMessage() {
+  return "Сейчас режим «Развлечение»: играем ради веселья, пополнения и выводы отключены.";
+}
+
+async function withdrawInfo() {
+  const min = Math.max(1, Number.parseInt(
+    await getSetting("WITHDRAW_MIN", process.env.WITHDRAW_MIN || "1000"),
+    10
+  ) || 1000);
+  return {
+    withdrawMin: min,
+    withdrawNote: await getSetting(
+      "WITHDRAW_NOTE",
+      process.env.WITHDRAW_NOTE
+        || "Выплата на карту или банковский счёт после проверки администратором."
+    ),
+    methods: [
+      { key: "card", label: "Банковская карта", hint: "16–19 цифр номера карты" },
+      { key: "account", label: "Банковский счёт", hint: "20 цифр счёта или номер по договору" },
+    ],
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /*  Комнаты                                                            */
 /* ------------------------------------------------------------------ */
 const rooms = new Map();      // roomId -> Room
@@ -494,6 +553,11 @@ function generateRoomId() {
     id += alphabet[crypto.randomInt(alphabet.length)];
   }
   return rooms.has(id) ? generateRoomId() : id;
+}
+
+/** Только комнаты, которые реально можно показать/подсчитать как активные. */
+function visibleRooms() {
+  return Array.from(rooms.values()).filter((room) => room.isVisible());
 }
 
 function shuffle(cards) {
@@ -745,8 +809,20 @@ class Room {
         id: p.id,
         name: p.name,
         connected: p.connected,
+        isBot: p.isBot,
       })),
     };
+  }
+
+  /** Комната показывается игрокам, только пока в ней есть живой онлайн-игрок.
+   *  Пустые и «осиротевшие» комнаты не должны висеть в списке активных. */
+  isVisible() {
+    if (this.status === "finished") return false;
+    return this.playerList().some((p) => !p.isBot && p.connected);
+  }
+
+  humanPlayers() {
+    return this.playerList().filter((p) => !p.isBot);
   }
 }
 
@@ -795,6 +871,10 @@ async function loadRooms() {
 /*  Socket.io                                                          */
 /* ------------------------------------------------------------------ */
 const app = express();
+// В production перед приложением стоит Caddy: реальный IP клиента приходит
+// в X-Forwarded-For. Без trust proxy rate limit считал бы всех игроков
+// одним IP прокси, а логи и проверки — неверными.
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -1485,9 +1565,18 @@ io.on("connection", (socket) => {
       const user = await ensureUser(rawUserId, name);
       const userId = user.id;
       userSockets.set(socket.id, { userId, name });
+      socket.data.userId = userId;
+      socket.data.name = name;
 
       let room = null;
       const requestedRoomId = String(data.roomId || "").trim().toUpperCase();
+
+      // Игрок мог остаться в предыдущей комнате (например, вернулся на главную
+      // и создал новую). Сначала корректно выходим из старой — иначе она
+      // останется висеть в списке активных.
+      if (socket.data.roomId && socket.data.roomId !== requestedRoomId) {
+        await leaveRoom(socket);
+      }
 
       if (requestedRoomId && rooms.has(requestedRoomId)) {
         room = rooms.get(requestedRoomId);
@@ -1800,7 +1889,11 @@ io.on("connection", (socket) => {
 
 async function leaveRoom(socket, isDisconnect = false) {
   const roomId = socket.data.roomId;
-  if (!roomId || !rooms.has(roomId)) return;
+  if (!roomId) return;
+  if (!rooms.has(roomId)) {
+    socket.data.roomId = null;
+    return;
+  }
   const room = rooms.get(roomId);
   const userId = socket.data.userId;
   const player = room.getPlayer(userId);
@@ -1870,7 +1963,7 @@ app.get("/health", async (_req, res) => {
     res.json({
       status: "ok",
       timestamp: new Date().toISOString(),
-      rooms: rooms.size,
+      rooms: visibleRooms().length,
       players: userSockets.size,
       db: "ok",
     });
@@ -1880,7 +1973,7 @@ app.get("/health", async (_req, res) => {
 });
 
 app.get("/api/rooms", (_req, res) => {
-  res.json(Array.from(rooms.values()).map((room) => room.toPublicJSON()));
+  res.json(visibleRooms().map((room) => room.toPublicJSON()));
 });
 
 app.get("/api/stats", async (_req, res) => {
@@ -1888,7 +1981,7 @@ app.get("/api/stats", async (_req, res) => {
     const usersRow = await dbGet("SELECT COUNT(*) AS total FROM users");
     const gamesRow = await dbGet("SELECT COUNT(*) AS total FROM game_stats");
     res.json({
-      totalRooms: rooms.size,
+      totalRooms: visibleRooms().length,
       online: userSockets.size,
       totalUsers: usersRow.total,
       totalGames: gamesRow.total,
@@ -2110,30 +2203,160 @@ app.get("/api/me/transactions", async (req, res) => {
 
 /* ----------------------------- Донаты ------------------------------ */
 async function donateInfo() {
+  const mode = await getAppMode();
   return {
     cardType: await getSetting("DONATE_CARD_TYPE", process.env.DONATE_CARD_TYPE || "Сбербанк"),
     cardNumber: await getSetting("DONATE_CARD_NUMBER", process.env.DONATE_CARD_NUMBER || ""),
     cardName: await getSetting("DONATE_CARD_NAME", process.env.DONATE_CARD_NAME || ""),
     min: Math.max(1, intEnv("DONATE_MIN", 100)),
     max: Math.max(1, intEnv("DONATE_MAX", 100000)),
-    note: process.env.DONATE_NOTE || "Переведите сумму на карту, затем отправьте заявку. Админ подтвердит пополнение.",
+    note: await getSetting(
+      "DONATE_NOTE",
+      process.env.DONATE_NOTE
+        || "Переведите сумму на карту, затем отправьте заявку. Админ подтвердит пополнение."
+    ),
+    mode,
+    paymentsEnabled: mode === "business",
   };
 }
+
+app.get("/api/mode", async (_req, res) => {
+  try {
+    const mode = await getAppMode();
+    res.json({
+      mode,
+      business: mode === "business",
+      paymentsEnabled: mode === "business",
+      title: mode === "business" ? "Бизнес" : "Развлечение",
+    });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
 
 app.get("/api/donate/info", async (req, res) => {
   try {
     const info = await donateInfo();
     const user = await resolveSession(bearerToken(req));
     let deposits = [];
+    let withdrawals = [];
     if (user) {
       deposits = await dbAll(
         "SELECT id, amount, status, created_at, processed_at, source FROM deposits WHERE user_id=? ORDER BY id DESC LIMIT 10",
         [user.id]
       );
+      withdrawals = await dbAll(
+        `SELECT id, amount, status, created_at, processed_at, payout_method,
+                payout_target, payout_name, payout_bank, source
+           FROM withdrawals WHERE user_id=? ORDER BY id DESC LIMIT 10`,
+        [user.id]
+      );
     }
-    res.json({ ...info, deposits, loggedIn: Boolean(user) });
+    res.json({ ...info, ...(await withdrawInfo()), deposits, withdrawals, loggedIn: Boolean(user) });
   } catch (err) {
     res.status(500).json({ error: "db error" });
+  }
+});
+
+app.get("/api/withdraw/info", async (req, res) => {
+  try {
+    const mode = await getAppMode();
+    const user = await resolveSession(bearerToken(req));
+    let withdrawals = [];
+    if (user) {
+      withdrawals = await dbAll(
+        `SELECT id, amount, status, created_at, processed_at, payout_method,
+                payout_target, payout_name, payout_bank, source
+           FROM withdrawals WHERE user_id=? ORDER BY id DESC LIMIT 10`,
+        [user.id]
+      );
+    }
+    res.json({
+      ...(await withdrawInfo()),
+      mode,
+      paymentsEnabled: mode === "business",
+      withdrawals,
+      loggedIn: Boolean(user),
+    });
+  } catch (err) {
+    res.status(500).json({ error: "db error" });
+  }
+});
+
+app.post("/api/withdraw", async (req, res) => {
+  try {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    if (!(await paymentsEnabled())) {
+      res.status(403).json({ error: funModeMessage() });
+      return;
+    }
+    if (!httpRateLimit(req, "withdraw", 10, 3600000)) {
+      res.status(429).json({ error: "Слишком много заявок. Попробуйте позже." });
+      return;
+    }
+
+    const info = await withdrawInfo();
+    const amount = sanitizeAmount(req.body?.amount, info.withdrawMin, MAX_BET * 10);
+    if (!amount) {
+      res.status(400).json({ error: `Сумма от ${info.withdrawMin} до ${MAX_BET * 10} 💰` });
+      return;
+    }
+
+    const method = req.body?.method === "account" ? "account" : "card";
+    const target = String(req.body?.target || "").replace(/[\s-]/g, "");
+    if (method === "card" && !/^\d{16,19}$/.test(target)) {
+      res.status(400).json({ error: "Номер карты: 16–19 цифр без пробелов" });
+      return;
+    }
+    if (method === "account" && !/^[A-Za-z0-9]{6,34}$/.test(target)) {
+      res.status(400).json({ error: "Номер счёта: 6–34 букв или цифр" });
+      return;
+    }
+    const holder = String(req.body?.holder || "").replace(/[<>]/g, "").trim().slice(0, 80);
+    if (holder.length < 2) {
+      res.status(400).json({ error: "Укажите имя получателя" });
+      return;
+    }
+    const bank = String(req.body?.bank || "").replace(/[<>]/g, "").trim().slice(0, 80);
+
+    const created = await withTx(async () => {
+      const row = await dbGet("SELECT balance FROM users WHERE id=?", [user.id]);
+      if (!row || row.balance < amount) return { error: "Недостаточно средств на балансе" };
+      const updated = await dbRun(
+        "UPDATE users SET balance = balance - ? WHERE id=? AND balance >= ?",
+        [amount, user.id, amount]
+      );
+      if (!updated.changes) return { error: "Недостаточно средств на балансе" };
+      const ins = await dbRun(
+        `INSERT INTO withdrawals
+           (user_id, amount, status, created_at, payout_method, payout_target,
+            payout_name, payout_bank, source)
+         VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, 'site')`,
+        [user.id, amount, nowSec(), method, target, holder, bank]
+      );
+      await dbRun(
+        "INSERT INTO transactions (user_id, amount, type, description, admin_id, created_at) VALUES (?,?,?,?,NULL,?)",
+        [user.id, -amount, "hold", `Заявка на вывод #${ins.lastID}`, nowSec()]
+      );
+      return { id: ins.lastID };
+    });
+
+    if (created.error) {
+      res.status(400).json({ error: created.error });
+      return;
+    }
+    const balanceRow = await dbGet("SELECT balance FROM users WHERE id=?", [user.id]);
+    res.json({
+      ok: true,
+      id: created.id,
+      amount,
+      status: "pending",
+      balance: balanceRow ? balanceRow.balance : null,
+    });
+  } catch (err) {
+    console.error("withdraw:", err);
+    res.status(500).json({ error: "Не удалось создать заявку на вывод" });
   }
 });
 
@@ -2141,6 +2364,10 @@ app.post("/api/donate", async (req, res) => {
   try {
     const user = await requireUser(req, res);
     if (!user) return;
+    if (!(await paymentsEnabled())) {
+      res.status(403).json({ error: funModeMessage() });
+      return;
+    }
     if (!httpRateLimit(req, "donate", 10, 3600000)) {
       res.status(429).json({ error: "Слишком много заявок. Попробуйте позже." });
       return;
@@ -2276,9 +2503,11 @@ app.get("/api/admin/overview", async (req, res) => {
       totalPoints: usersRow.points,
       totalGames: gamesRow.total,
       totalRooms: rooms.size,
+      visibleRooms: visibleRooms().length,
       online: userSockets.size,
       pendingDeposits: pendingDeposits.cnt,
       pendingWithdrawals: pendingWithdrawals.cnt,
+      mode: await getAppMode(),
       uptime: process.uptime(),
       rooms: Array.from(rooms.values()).map((room) => room.toPublicJSON()),
       card: await donateInfo(),
@@ -2403,6 +2632,7 @@ app.get("/api/admin/withdrawals", async (req, res) => {
       : "pending";
     const rows = await dbAll(
       `SELECT w.id, w.user_id, w.amount, w.status, w.created_at, w.processed_at,
+              w.payout_method, w.payout_target, w.payout_name, w.payout_bank, w.source,
               COALESCE(u.first_name, u.username, CAST(u.id AS TEXT)) AS name
          FROM withdrawals w LEFT JOIN users u ON u.id = w.user_id
         WHERE w.status=? ORDER BY w.id DESC LIMIT 100`,
@@ -2474,7 +2704,11 @@ app.post("/api/admin/broadcast", async (req, res) => {
 
 app.get("/api/admin/settings", async (req, res) => {
   if (!(await requireAdmin(req, res))) return;
-  res.json(await donateInfo());
+  res.json({
+    ...(await donateInfo()),
+    ...(await withdrawInfo()),
+    mode: await getAppMode(),
+  });
 });
 
 app.put("/api/admin/settings", async (req, res) => {
@@ -2485,13 +2719,28 @@ app.put("/api/admin/settings", async (req, res) => {
       cardNumber: "DONATE_CARD_NUMBER",
       cardName: "DONATE_CARD_NAME",
       note: "DONATE_NOTE",
+      withdrawNote: "WITHDRAW_NOTE",
+      withdrawMin: "WITHDRAW_MIN",
     };
     for (const [field, key] of Object.entries(map)) {
-      if (typeof req.body?.[field] === "string") {
-        await setSetting(key, req.body[field].slice(0, 300));
+      if (typeof req.body?.[field] === "string" || typeof req.body?.[field] === "number") {
+        await setSetting(key, String(req.body[field]).slice(0, 300));
       }
     }
-    res.json({ ok: true, ...(await donateInfo()) });
+    if (typeof req.body?.mode === "string") {
+      const mode = req.body.mode.trim().toLowerCase();
+      if (!APP_MODES.has(mode)) {
+        res.status(400).json({ error: "Режим должен быть business или fun" });
+        return;
+      }
+      await setSetting("APP_MODE", mode);
+    }
+    res.json({
+      ok: true,
+      ...(await donateInfo()),
+      ...(await withdrawInfo()),
+      mode: await getAppMode(),
+    });
   } catch (err) {
     res.status(500).json({ error: "Не удалось сохранить настройки" });
   }
@@ -2540,7 +2789,7 @@ setInterval(async () => {
   const now = Date.now();
   for (const room of Array.from(rooms.values())) {
     try {
-      const humans = room.playerList().filter((p) => !p.isBot);
+      const humans = room.humanPlayers();
       const allOffline = !humans.some((p) => p.connected);
       if (room.status === "playing" && allOffline && now - room.lastActivity > 10 * 60 * 1000) {
         await refundRoom(room, "Все игроки отключились");
@@ -2550,13 +2799,21 @@ setInterval(async () => {
         await deleteRoom(room);
         continue;
       }
-      if (room.status === "waiting" && !humans.some((p) => p.connected)
-          && now - room.lastActivity > 2 * 60 * 1000) {
+      // В комнате не осталось ни одного живого игрока (например, создатель
+      // закрыл вкладку) — удаляем после короткой паузы на переподключение.
+      if (!humans.length && now - room.lastActivity > 60 * 1000) {
         await deleteRoom(room);
         continue;
       }
-      if (room.status === "waiting" && now - room.lastActivity > ROOM_TTL) {
+      // Комната ожидания живёт не дольше ROOM_TTL с момента создания.
+      if (room.status === "waiting" && now - room.createdAt > ROOM_TTL) {
         await deleteRoom(room);
+        continue;
+      }
+      if (room.status === "waiting" && allOffline
+          && now - room.lastActivity > 2 * 60 * 1000) {
+        await deleteRoom(room);
+        continue;
       }
     } catch (err) {
       console.error("cleanup:", err);

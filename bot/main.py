@@ -317,8 +317,11 @@ async def main():
     dp = Dispatcher()
 
     @dp.errors.register
-    async def on_update_error(update, exception):
-        logger.exception("Ошибка при обработке update %s: %s", update, exception)
+    async def on_update_error(event, exception=None):
+        # aiogram вызывает обработчик ошибок с одним аргументом (ErrorEvent),
+        # но в разных версиях сигнатура отличается — поддерживаем обе.
+        error = exception or getattr(event, "exception", event)
+        logger.exception("Ошибка при обработке update %s: %s", event, error)
 
     # порядок важен: common (глобальная отмена) идёт первым
     dp.include_router(common_router)

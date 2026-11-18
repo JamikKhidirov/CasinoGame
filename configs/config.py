@@ -34,7 +34,17 @@ MIN_BET = _int("MIN_BET", 1)                        # минимальная с�
 MAX_BET = _int("MAX_BET", 1000000)                  # максимальная ставка
 COMMISSION_PERCENT = _int("COMMISSION_PERCENT", 0)  # комиссия казино в %
 WITHDRAW_MIN = _int("WITHDRAW_MIN", 1000)           # минимальная сумма вывода
-WITHDRAW_NOTE = os.getenv("WITHDRAW_NOTE", "Выплаты производятся в виде Telegram Premium")
+WITHDRAW_NOTE = os.getenv(
+    "WITHDRAW_NOTE",
+    "Выплата на карту или банковский счёт после проверки администратором",
+)
+
+# ==== Режим работы ====
+# business — донаты, пополнения и выводы включены;
+# fun — только игра ради веселья, все денежные операции отключены.
+APP_MODE = os.getenv("APP_MODE", "business").strip().lower()
+if APP_MODE not in ("business", "fun"):
+    APP_MODE = "business"
 
 # ==== Донат по реквизитам карты (настраивается админом) ====
 DONATE_CARD_TYPE = os.getenv("DONATE_CARD_TYPE", "Сбербанк").strip()   # тип карты / банк
@@ -66,6 +76,7 @@ DB_PATH = os.getenv("DB_PATH", _DEFAULT_DB)
 # ==== Настройки, которые админ может менять прямо из панели (/admin → Настройки) ====
 # key -> (название, значение по умолчанию из .env)
 SETTINGS = {
+    "APP_MODE": ("Режим: business / fun", APP_MODE),
     "COMMISSION_PERCENT": ("Комиссия казино, %", COMMISSION_PERCENT),
     "MIN_BET": ("Мин. ставка 💰", MIN_BET),
     "MAX_BET": ("Макс. ставка 💰", MAX_BET),
@@ -100,6 +111,27 @@ def load_runtime_settings() -> None:
                     globals()[key] = int(value)
                 except (TypeError, ValueError):
                     pass
+
+
+def get_app_mode() -> str:
+    """Текущий режим сайта. Читаем БД каждый раз: админ может переключить
+    «Бизнес/Развлечение» в веб-панели без перезапуска бота."""
+    try:
+        from database import get_all_settings
+        raw = str(get_all_settings().get("APP_MODE", APP_MODE)).strip().lower()
+    except Exception:
+        raw = APP_MODE
+    return raw if raw in ("business", "fun") else "business"
+
+
+def payments_enabled() -> bool:
+    return get_app_mode() == "business"
+
+
+FUN_MODE_MESSAGE = (
+    "🎲 Сейчас режим «Развлечение»: играем ради веселья, "
+    "пополнения и выводы отключены."
+)
 
 
 def check() -> list[str]:

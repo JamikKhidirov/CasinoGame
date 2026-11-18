@@ -23,5 +23,8 @@ npm-debug.log
 .DS_Store
 Thumbs.db
 
+# Backup'ы SQLite (deploy/backup.sh)
+backups/
+
 # React build
 casino/webapp/dist/

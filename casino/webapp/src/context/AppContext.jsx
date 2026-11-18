@@ -9,6 +9,7 @@ export function AppProvider({ children }) {
   const [token, setToken] = useState(getUserToken);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(() => Boolean(getUserToken()));
+  const [mode, setMode] = useState("business");
   const [toasts, setToasts] = useState([]);
 
   const notify = useCallback((message, type = "info") => {
@@ -41,6 +42,23 @@ export function AppProvider({ children }) {
       return null;
     }
   }, []);
+
+  const refreshMode = useCallback(async () => {
+    try {
+      const data = await api.anon("/api/mode");
+      const next = data?.mode === "fun" ? "fun" : "business";
+      setMode(next);
+      return next;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMode();
+    const timer = setInterval(refreshMode, 30000);
+    return () => clearInterval(timer);
+  }, [refreshMode]);
 
   useEffect(() => {
     let alive = true;
@@ -82,14 +100,17 @@ export function AppProvider({ children }) {
     user,
     token,
     loading,
+    mode,
+    business: mode === "business",
     loginWithCode,
     logout,
     refresh,
+    refreshMode,
     patchUser,
     notify,
     toasts,
     dismiss,
-  }), [user, token, loading, loginWithCode, logout, refresh, patchUser, notify, toasts, dismiss]);
+  }), [user, token, loading, mode, loginWithCode, logout, refresh, refreshMode, patchUser, notify, toasts, dismiss]);
 
   return (
     <AppContext.Provider value={value}>

@@ -1,0 +1,29 @@
+# ============================================
+#  🎰 Casino Game — Caddy
+#  Домен подставляется из .env: DOMAIN=casino.example.com
+#
+#  Caddy сам:
+#    • получает и продлевает сертификат Let's Encrypt;
+#    • проксирует HTTP API и Socket.io (WebSocket) на casino:3000;
+#    • сжимает ответы.
+#  Порт 3000 приложения доступен только внутри docker-сети.
+# ============================================
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Сайт, /api/* и Socket.io — всё на один Node.js-сервер
+	reverse_proxy casino:3000 {
+		header_up X-Real-IP {remote_host}
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

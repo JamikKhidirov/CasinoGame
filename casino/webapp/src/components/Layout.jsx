@@ -6,12 +6,13 @@ import { fmt } from "../lib/format.js";
 const TABS = [
   { to: "/", label: "Играть", icon: "🎮", end: true },
   { to: "/stats", label: "Топы", icon: "📊" },
-  { to: "/donate", label: "Донат", icon: "💳" },
+  { to: "/donate", label: "Касса", icon: "💳" },
   { to: "/admin", label: "Админ", icon: "🛠" },
 ];
 
 export default function Layout() {
-  const { user, logout } = useApp();
+  const { user, logout, mode } = useApp();
+  const tabs = TABS.filter((tab) => tab.to !== "/donate" || mode !== "fun");
 
   return (
     <div className="app-shell">
@@ -22,6 +23,11 @@ export default function Layout() {
         </Link>
 
         <div className="topbar-right">
+          {mode === "fun" ? (
+            <span className="chip chip-mode" title="Пополнения и выводы отключены">
+              🎲 Развлечение
+            </span>
+          ) : null}
           {user ? (
             <>
               <span className="chip chip-balance" title="Баланс">
@@ -47,7 +53,7 @@ export default function Layout() {
       </main>
 
       <nav className="tabbar" aria-label="Разделы">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <NavLink
             key={tab.to}
             to={tab.to}

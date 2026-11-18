@@ -80,6 +80,8 @@ async function startServer() {
       DB_PATH: TMP_DB,
       ADMIN_PASSWORD: "e2e-pass",
       MOVE_TIMEOUT: "15",
+      APP_MODE: "business",
+      WITHDRAW_MIN: "1000",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -376,6 +378,17 @@ function dbRun(sql, params = []) {
   });
 }
 
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    const db = new sqlite3.Database(TMP_DB);
+    db.get(sql, params, (err, row) => {
+      db.close();
+      if (err) reject(err);
+      else resolve(row || null);
+    });
+  });
+}
+
 async function httpJson(method, urlPath, { body, token } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -494,10 +507,138 @@ async function testRestApi() {
     "пополнение видно в операциях игрока"
   );
 
+  // ---- режим «Бизнес/Развлечение» ----
+  const modeDefault = await httpJson("GET", "/api/mode");
+  check(modeDefault.status === 200 && modeDefault.data?.mode === "business",
+    "по умолчанию режим «Бизнес»", JSON.stringify(modeDefault.data));
+
+  const setFun = await httpJson("PUT", "/api/admin/settings", {
+    token: adminToken,
+    body: { mode: "fun" },
+  });
+  check(setFun.status === 200 && setFun.data?.mode === "fun", "админ включает режим «Развлечение»");
+
+  const modeFun = await httpJson("GET", "/api/mode");
+  check(modeFun.data?.mode === "fun" && modeFun.data?.paymentsEnabled === false,
+    "публичный режим сразу стал fun");
+
+  const funDeposit = await httpJson("POST", "/api/donate", { token, body: { amount: 500 } });
+  check(funDeposit.status === 403, "в fun-режиме пополнение запрещено", String(funDeposit.status));
+
+  const funWithdraw = await httpJson("POST", "/api/withdraw", {
+    token,
+    body: { amount: 1000, method: "card", target: "2202200000001111", holder: "Тест Тестов" },
+  });
+  check(funWithdraw.status === 403, "в fun-режиме вывод запрещён", String(funWithdraw.status));
+
+  const setBusiness = await httpJson("PUT", "/api/admin/settings", {
+    token: adminToken,
+    body: { mode: "business" },
+  });
+  check(setBusiness.status === 200 && setBusiness.data?.mode === "business",
+    "админ возвращает режим «Бизнес»");
+
+  // ---- вывод на карту ----
+  const badWithdraw = await httpJson("POST", "/api/withdraw", {
+    token,
+    body: { amount: 1000, method: "card", target: "123", holder: "Иван Иванов" },
+  });
+  check(badWithdraw.status === 400, "некорректный номер карты отклонён", String(badWithdraw.status));
+
+  const withdraw = await httpJson("POST", "/api/withdraw", {
+    token,
+    body: {
+      amount: 1000,
+      method: "card",
+      target: "2202 2000 0000 1111",
+      holder: "Иван Иванов",
+      bank: "Сбербанк",
+    },
+  });
+  check(withdraw.status === 200 && withdraw.data?.id, "заявка на вывод создаётся",
+    JSON.stringify(withdraw.data));
+  check(withdraw.data?.balance === 750, "сумма вывода заморожена", String(withdraw.data?.balance));
+
+  const wdInfo = await httpJson("GET", "/api/donate/info", { token });
+  check((wdInfo.data?.withdrawals || []).some((row) => row.id === withdraw.data?.id),
+    "вывод виден в кабинете игрока");
+
+  const pendingWd = await httpJson("GET", "/api/admin/withdrawals?status=pending", { token: adminToken });
+  const wdRow = (pendingWd.data?.rows || []).find((row) => row.id === withdraw.data?.id);
+  check(Boolean(wdRow), "вывод виден в админке");
+  check(wdRow?.payout_target === "2202200000001111" && wdRow?.payout_name === "Иван Иванов",
+    "админ видит реквизиты вывода", JSON.stringify(wdRow));
+
+  if (wdRow) {
+    const resolveWd = await httpJson("POST", `/api/admin/withdrawals/${wdRow.id}/resolve`, {
+      token: adminToken,
+      body: { approve: true },
+    });
+    check(resolveWd.status === 200 && resolveWd.data?.status === "approved",
+      "админ подтверждает вывод");
+  }
+
+  const balanceAfterWd = await dbGet("SELECT balance FROM users WHERE id=?", [900001111]);
+  check(balanceAfterWd?.balance === 750, "после подтверждения баланс не меняется",
+    JSON.stringify(balanceAfterWd));
+
   const logout = await httpJson("POST", "/api/auth/logout", { token });
   check(logout.status === 200, "выход из аккаунта работает");
   const afterLogout = await httpJson("GET", "/api/auth/me", { token });
   check(afterLogout.status === 401, "после выхода токен недействителен", String(afterLogout.status));
+}
+
+/* --------------------------- Комнаты ------------------------------- */
+async function testRoomVisibility() {
+  console.log("ОЧИСТКА КОМНАТ");
+
+  const client = connectClient("900000003", "Комната");
+  if (!client.socket.connected) await once(client.socket, "connect");
+  const joined = once(client.socket, "joined");
+  client.socket.emit("join", {
+    userId: client.userId,
+    userName: client.name,
+    gameType: "dice",
+    bet: 10,
+    maxPlayers: 2,
+  });
+  const { roomId } = await joined;
+
+  const visible = await httpJson("GET", "/api/rooms");
+  check(
+    (visible.data || []).some((room) => room.id === roomId),
+    "созданная комната видна в списке"
+  );
+
+  // Обрыв связи: игрок больше не онлайн — комната не должна светиться в списке.
+  client.socket.disconnect();
+  await sleep(500);
+  const hidden = await httpJson("GET", "/api/rooms");
+  check(
+    !(hidden.data || []).some((room) => room.id === roomId),
+    "комната без онлайн-игрока скрыта из списка"
+  );
+
+  // Явный выход из комнаты удаляет её сразу.
+  const leaver = connectClient("900000004", "Выходящий");
+  if (!leaver.socket.connected) await once(leaver.socket, "connect");
+  const joined2 = once(leaver.socket, "joined");
+  leaver.socket.emit("join", {
+    userId: leaver.userId,
+    userName: leaver.name,
+    gameType: "dice",
+    bet: 10,
+    maxPlayers: 2,
+  });
+  const second = await joined2;
+  leaver.socket.emit("leaveRoom");
+  await sleep(500);
+  const afterLeave = await httpJson("GET", "/api/rooms");
+  check(
+    !(afterLeave.data || []).some((room) => room.id === second.roomId),
+    "после явного выхода пустая комната удалена"
+  );
+  leaver.socket.disconnect();
 }
 
 /* ------------------------------------------------------------------ */
@@ -514,6 +655,7 @@ async function main() {
     await testDurak(host, guest);
     await testBotsSolo(host);
     await testRestApi();
+    await testRoomVisibility();
   } catch (err) {
     fail("исключение", err && err.message);
     console.error(err);

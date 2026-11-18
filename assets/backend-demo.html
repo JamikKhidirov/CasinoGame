@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Как живёт игровая комната — анимация бэкенда</title>
+<style>
+  :root {
+    --bg: #070d1b;
+    --panel: rgba(255, 255, 255, 0.05);
+    --border: rgba(255, 255, 255, 0.12);
+    --text: #e8eefc;
+    --muted: #93a3c4;
+    --blue: #60a5fa;
+    --violet: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--text);
+    font-family: "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+    background:
+      radial-gradient(circle at 12% -10%, rgba(139, 92, 246, 0.35), transparent 45%),
+      radial-gradient(circle at 90% 0%, rgba(59, 130, 246, 0.3), transparent 42%),
+      linear-gradient(160deg, #070d1b, #0d1530 55%, #171542);
+    overflow-x: hidden;
+  }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 28px 22px 60px; }
+  header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+  h1 { margin: 0; font-size: clamp(20px, 2.4vw, 30px); letter-spacing: -0.02em; }
+  h1 span { background: linear-gradient(120deg, #60a5fa, #a78bfa 60%, #f472b6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { margin: 6px 0 0; color: var(--muted); font-size: 13.5px; max-width: 720px; line-height: 1.5; }
+  .controls { display: flex; gap: 8px; }
+  button {
+    font: inherit; font-size: 13px; cursor: pointer;
+    color: var(--text); background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px;
+    transition: background .2s ease, transform .1s ease;
+  }
+  button:hover { background: rgba(255,255,255,0.12); }
+  button:active { transform: translateY(1px); }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; }
+  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 18px 45px rgba(2, 6, 23, 0.35);
+  }
+
+  /* ---------------- stage ---------------- */
+  .stage-card { padding: 18px 18px 8px; }
+  .stage {
+    position: relative;
+    height: 390px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    margin-top: 10px;
+  }
+  .lane { position: relative; display: flex; justify-content: center; }
+  .lane::before {
+    content: "";
+    position: absolute;
+    top: 52px; bottom: 8px; left: 50%;
+    width: 1px;
+    background: repeating-linear-gradient(to bottom, rgba(148,163,184,.5) 0 6px, transparent 6px 13px);
+  }
+  .lane-head {
+    position: relative; z-index: 2;
+    height: 44px; padding: 0 12px;
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 1px solid var(--border); border-radius: 12px;
+    background: rgba(10, 16, 32, 0.9);
+    font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    transition: border-color .3s ease, box-shadow .3s ease, transform .3s ease;
+  }
+  .lane.active .lane-head {
+    border-color: rgba(96, 165, 250, 0.85);
+    box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.14), 0 0 24px rgba(96, 165, 250, 0.25);
+    transform: translateY(-2px);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 10px var(--blue); }
+  .lane:nth-child(2) .dot { background: var(--violet); box-shadow: 0 0 10px var(--violet); }
+  .lane:nth-child(3) .dot { background: var(--green); box-shadow: 0 0 10px var(--green); }
+  .lane:nth-child(4) .dot { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+
+  .packet {
+    position: absolute;
+    top: 96px;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    max-width: 210px;
+    padding: 7px 12px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.95), rgba(109, 40, 217, 0.95));
+    border: 1px solid rgba(147, 197, 253, 0.55);
+    box-shadow: 0 10px 26px rgba(37, 99, 235, 0.4);
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.3;
+    text-align: center;
+    white-space: pre-line;
+    opacity: 0;
+    transition: left .55s cubic-bezier(.45,.05,.25,1), top .4s ease, opacity .25s ease;
+    pointer-events: none;
+  }
+  .packet.show { opacity: 1; }
+  .packet.response {
+    background: linear-gradient(135deg, rgba(5, 150, 105, 0.95), rgba(16, 185, 129, 0.9));
+    border-color: rgba(110, 231, 183, 0.6);
+    box-shadow: 0 10px 26px rgba(16, 185, 129, 0.32);
+  }
+  .packet.db {
+    background: linear-gradient(135deg, rgba(180, 83, 9, 0.95), rgba(217, 119, 6, 0.92));
+    border-color: rgba(253, 230, 138, 0.6);
+    box-shadow: 0 10px 26px rgba(217, 119, 6, 0.3);
+  }
+
+  .state-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 2px 14px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; letter-spacing: .04em;
+    border: 1px solid var(--border); background: rgba(2, 6, 23, .5);
+    transition: all .3s ease;
+  }
+  .badge .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .badge.waiting { color: #fcd34d; border-color: rgba(251,191,36,.45); background: rgba(251,191,36,.12); }
+  .badge.waiting .pulse { background: var(--amber); box-shadow: 0 0 10px var(--amber); animation: pulse 1.4s infinite; }
+  .badge.playing { color: #6ee7b7; border-color: rgba(52,211,153,.45); background: rgba(52,211,153,.12); }
+  .badge.playing .pulse { background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse 1.1s infinite; }
+  .badge.finished { color: #c4b5fd; border-color: rgba(167,139,250,.5); background: rgba(167,139,250,.14); }
+  .badge.finished .pulse { background: var(--violet); box-shadow: 0 0 10px var(--violet); }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1);} 50% { opacity: .35; transform: scale(.75);} }
+
+  .step-title { color: var(--muted); font-size: 12px; margin-left: auto; font-family: "JetBrains Mono", Consolas, monospace; }
+
+  /* ---------------- sidebar ---------------- */
+  .side { display: grid; gap: 16px; align-content: start; }
+  .panel { padding: 16px; }
+  .panel h2 { margin: 0 0 12px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; font-weight: 700; }
+
+  .balances { display: grid; gap: 8px; }
+  .player {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 9px 11px; border-radius: 11px;
+    background: rgba(2, 6, 23, .42); border: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .player .who { display: flex; align-items: center; gap: 8px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; background: rgba(96,165,250,.18); border: 1px solid rgba(96,165,250,.4); }
+  .player.b .avatar { background: rgba(167,139,250,.18); border-color: rgba(167,139,250,.4); }
+  .money { font-family: "JetBrains Mono", Consolas, monospace; font-weight: 700; font-size: 13px; transition: color .3s ease; }
+  .money.up { color: var(--green); }
+  .money.down { color: var(--red); }
+  .money.flash { animation: moneyFlash .8s ease; }
+  @keyframes moneyFlash { 0% { transform: scale(1);} 40% { transform: scale(1.18);} 100% { transform: scale(1);} }
+
+  .log { display: grid; gap: 6px; max-height: 138px; overflow: hidden; }
+  .log-line {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11px; line-height: 1.35; color: #bfdbfe;
+    padding: 5px 8px; border-radius: 7px;
+    background: rgba(2, 6, 23, .35);
+    opacity: 0; transform: translateY(4px);
+    animation: logIn .3s ease forwards;
+    overflow-wrap: anywhere;
+  }
+  .log-line.ok { color: #a7f3d0; }
+  .log-line.money { color: #fde68a; }
+  @keyframes logIn { to { opacity: 1; transform: none; } }
+
+  pre.code {
+    margin: 0; padding: 12px;
+    border-radius: 11px;
+    background: rgba(2, 6, 23, .72);
+    border: 1px solid rgba(96, 165, 250, .18);
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11.5px; line-height: 1.5;
+    color: #dbeafe; white-space: pre-wrap; overflow-wrap: anywhere;
+    min-height: 132px;
+  }
+  pre.code .k { color: #93c5fd; }
+  pre.code .s { color: #86efac; }
+  pre.code .c { color: #64748b; }
+
+  /* ---------------- timeline ---------------- */
+  .timeline { margin-top: 16px; padding: 16px 18px 18px; }
+  .timeline h2 { margin: 0 0 12px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+  .step {
+    padding: 9px 11px; border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(2, 6, 23, .32);
+    font-size: 11.5px; line-height: 1.35; color: var(--muted);
+    transition: all .3s ease;
+    display: flex; gap: 8px; align-items: start;
+  }
+  .step b { display: block; color: var(--text); font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+  .step .n {
+    flex: 0 0 20px; width: 20px; height: 20px; border-radius: 6px;
+    display: grid; place-items: center; font-size: 10.5px; font-weight: 800;
+    background: rgba(255,255,255,.07); color: var(--muted);
+  }
+  .step.active {
+    border-color: rgba(96,165,250,.7);
+    background: linear-gradient(135deg, rgba(37,99,235,.22), rgba(139,92,246,.18));
+    color: var(--text);
+    box-shadow: 0 0 0 3px rgba(96,165,250,.1);
+  }
+  .step.active .n { background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; }
+
+  .note {
+    margin-top: 14px; padding: 12px 14px;
+    border-radius: 12px; border: 1px solid rgba(52,211,153,.35);
+    background: rgba(52,211,153,.08);
+    font-size: 12.5px; line-height: 1.55; color: #bbf7d0;
+  }
+  .note b { color: #ecfdf5; }
+  footer { margin-top: 22px; color: #64748b; font-size: 11.5px; text-align: center; }
+  a { color: #93c5fd; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>🎬 Как живёт <span>игровая комната</span></h1>
+      <p class="sub">
+        Анимация реального цикла бэкенда CasinoGame: вход по сессии, старт партии, списание ставок,
+        ход игрока, сохранение в SQLite и выплата. Слева — сообщения, справа — состояние и код.
+      </p>
+    </div>
+    <div class="controls">
+      <button id="pause">⏸ Пауза</button>
+      <button id="restart">↻ Заново</button>
+      <button id="speed">⚡ 1×</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="card stage-card">
+      <div class="stage" id="stage">
+        <div class="lane" data-lane="0"><div class="lane-head"><span class="dot"></span>Браузер · React</div></div>
+        <div class="lane" data-lane="1"><div class="lane-head"><span class="dot"></span>Socket.io · Express</div></div>
+        <div class="lane" data-lane="2"><div class="lane-head"><span class="dot"></span>Игровое ядро · Room</div></div>
+        <div class="lane" data-lane="3"><div class="lane-head"><span class="dot"></span>SQLite · WAL</div></div>
+      </div>
+
+      <div class="state-row">
+        <span class="badge waiting" id="stateBadge"><span class="pulse"></span><span id="stateText">WAITING</span></span>
+        <span class="badge" style="color:#cbd5f5">Комната <b style="font-family:Consolas,monospace;color:#fff">7KQ2MD</b></span>
+        <span class="step-title" id="stepTitle">шаг 1 / 12</span>
+      </div>
+
+      <div class="timeline" style="margin:14px 0 6px;padding:0;border:0;background:none;box-shadow:none">
+        <div class="steps" id="steps"></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="card panel">
+        <h2>💰 Кошельки (users.balance)</h2>
+        <div class="balances">
+          <div class="player a">
+            <span class="who"><span class="avatar">🦊</span> Алиса · 777001</span>
+            <span class="money" id="balA">1 000</span>
+          </div>
+          <div class="player b">
+            <span class="who"><span class="avatar">🐼</span> Борис · 777002</span>
+            <span class="money" id="balB">1 000</span>
+          </div>
+        </div>
+        <div class="note" id="moneyNote">Ставки ещё не списаны — комната в статусе <b>waiting</b>.</div>
+      </section>
+
+      <section class="card panel">
+        <h2>🧾 Что происходит в коде</h2>
+        <pre class="code" id="code"></pre>
+      </section>
+
+      <section class="card panel">
+        <h2>📜 Журнал сервера</h2>
+        <div class="log" id="log"></div>
+      </section>
+    </aside>
+  </div>
+
+  <footer>
+    Учебная анимация · реальная логика: <code>casino/server.js</code> · подробности в <code>BACKEND_TUTORIAL.md</code>
+  </footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const lanes = Array.from(document.querySelectorAll(".lane"));
+  const stage = document.getElementById("stage");
+  const stateBadge = document.getElementById("stateBadge");
+  const stateText = document.getElementById("stateText");
+  const stepTitle = document.getElementById("stepTitle");
+  const codeBox = document.getElementById("code");
+  const logBox = document.getElementById("log");
+  const balA = document.getElementById("balA");
+  const balB = document.getElementById("balB");
+  const moneyNote = document.getElementById("moneyNote");
+  const stepsBox = document.getElementById("steps");
+  const pauseBtn = document.getElementById("pause");
+  const restartBtn = document.getElementById("restart");
+  const speedBtn = document.getElementById("speed");
+
+  let paused = false;
+  let speed = 1;
+  let runId = 0;
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms / speed));
+
+  const STEPS = [
+    {
+      from: 0, to: 1, type: "request",
+      msg: "join { sessionToken }",
+      title: "Игрок подключается",
+      desc: "Браузер отправляет токен сессии и код комнаты.",
+      state: "waiting",
+      code: "socket.on('join', async (data) => {\\n  const user = await resolveSession(data.sessionToken);\\n  const room = rooms.get(data.roomId);\\n  room.addPlayer(user.id, user.first_name);\\n});",
+      log: "join: токен сессии проверен",
+    },
+    {
+      from: 1, to: 3, type: "db",
+      msg: "ensureUser() + getBalance()",
+      title: "Сервер проверяет БД",
+      desc: "Пользователь создаётся/читается, баланс берётся из SQLite.",
+      state: "waiting",
+      code: "const user = await ensureUser(userId, name);\\nconst balance = await getBalance(user.id);\\n// клиент не присылает баланс — только сервер его знает",
+      log: "users: найден ID 777001, баланс 1000",
+    },
+    {
+      from: 1, to: 0, type: "response",
+      msg: "joined { roomId, userId, isCreator }",
+      title: "Ответ игроку",
+      desc: "Сервер подтверждает вход. Второй игрок делает то же самое.",
+      state: "waiting",
+      code: "socket.join(room.id);\\nsocket.emit('joined', { roomId, userId, isCreator });\\nbroadcastRoom(room); // каждому своё состояние",
+      log: "joined: в комнате 2 игрока",
+    },
+    {
+      from: 0, to: 1, type: "request",
+      msg: "startGame",
+      title: "Создатель начинает игру",
+      desc: "Кнопку «Начать» может нажать только создатель комнаты.",
+      state: "waiting",
+      code: "socket.on('startGame', async () => {\\n  if (room.creatorId !== socket.data.userId) return;\\n  await startRoom(room);\\n});",
+      log: "startGame: создатель = Алиса",
+    },
+    {
+      from: 1, to: 3, type: "db",
+      msg: "reserveBets() −100 −100",
+      title: "Ставки списываются",
+      desc: "Деньги уходят в банк до начала партии. Если у кого-то не хватило — ставки возвращаются.",
+      state: "playing",
+      code: "const ok = await tryDeduct(player.id, room.bet, 'Ставка');\\nif (!ok) { /* вернуть уже списанные */ }\\n// UPDATE users SET balance = balance - ?\\n// WHERE id=? AND balance >= ?",
+      log: "reserveBets: −100 у Алисы, −100 у Бориса",
+      money: { a: 900, b: 900, cls: "down" },
+    },
+    {
+      from: 1, to: 0, type: "response",
+      msg: "gameStarted + roomUpdated",
+      title: "Партия началась",
+      desc: "Всем уходит новое состояние: статус playing, ставка, чей ход.",
+      state: "playing",
+      code: "room.status = 'playing';\\ninitDice(room);\\nawait saveRoom(room);\\nbroadcastRoom(room);",
+      log: "gameStarted: статус playing",
+    },
+    {
+      from: 0, to: 1, type: "request",
+      msg: "playerAction { action: 'roll' }",
+      title: "Ход игрока",
+      desc: "Клиент присылает только намерение. Никаких «я выбросил 6» — число генерирует сервер.",
+      state: "playing",
+      code: "socket.on('playerAction', ({ action }) => {\\n  const error = handleDiceAction(room, player, action);\\n  if (error) return emitError(socket, error);\\n});",
+      log: "playerAction: roll от Алисы",
+    },
+    {
+      from: 1, to: 2, type: "request",
+      msg: "handleDiceAction() → value = 5",
+      title: "Сервер проверяет и бросает",
+      desc: "Проверка очереди, защита от повторного броска, crypto.randomInt(1, 7).",
+      state: "playing",
+      code: "if (room.currentTurn !== player.id) return 'Не ваш ход';\\nif (room.diceRolls[player.id] !== undefined) return 'Уже бросили';\\nconst value = crypto.randomInt(1, 7);",
+      log: "dice: Алиса = 5, Борис = 2",
+    },
+    {
+      from: 2, to: 3, type: "db",
+      msg: "saveRoom() → web_rooms",
+      title: "Состояние сохраняется",
+      desc: "После каждого хода комната пишется в SQLite. Перезапуск сервера не потеряет партию.",
+      state: "playing",
+      code: "await dbRun(\\n  'INSERT INTO web_rooms (id, state, updated_at) VALUES (?,?,?) ' +\\n  'ON CONFLICT(id) DO UPDATE SET state=excluded.state',\\n  [room.id, JSON.stringify(room.toState()), Date.now()]\\n);",
+      log: "saveRoom: 2 карты/броска в web_rooms",
+    },
+    {
+      from: 2, to: 0, type: "response",
+      msg: "roomUpdated (каждому своё)",
+      title: "Рассылка состояния",
+      desc: "Сервер отправляет каждому сокету персональный снимок: чужие данные скрыты.",
+      state: "playing",
+      code: "for (const socketId of roomSockets) {\\n  const s = io.sockets.sockets.get(socketId);\\n  s.emit('roomUpdated', room.toJSONFor(s.data.userId));\\n}",
+      log: "roomUpdated: у каждого свой снимок",
+    },
+    {
+      from: 2, to: 3, type: "db",
+      msg: "settleRoom(): pool 200 → prize 200",
+      title: "Выплата победителю",
+      desc: "Банк = сумма ставок. Комиссия вычитается, приз делится между победителями — всё в одной транзакции.",
+      state: "finished",
+      code: "const pool = players.reduce((s, p) => s + p.bet, 0);\\nconst prize = pool - Math.floor(pool * COMMISSION / 100);\\n// UPDATE users SET balance = balance + ?\\n// INSERT INTO transactions ... 'win'",
+      log: "settleRoom: +200 Алисе, запись 'win'",
+      money: { a: 1100, b: 900, cls: "up" },
+    },
+    {
+      from: 2, to: 0, type: "response",
+      msg: "gameFinished { winner, results }",
+      title: "Итог и очистка",
+      desc: "Клиент показывает результат. Комната живёт ещё 15 минут, затем удаляется фоновой задачей.",
+      state: "finished",
+      code: "room.status = 'finished';\\nroom.winner = winners;\\nawait saveRoom(room);\\nio.to(room.id).emit('gameFinished', { winner, results });\\nscheduleDeletion(room);",
+      log: "gameFinished: победила Алиса (5 > 2)",
+    },
+  ];
+
+  function laneCenter(index) {
+    return ((index + 0.5) / 4) * 100;
+  }
+
+  function renderSteps() {
+    stepsBox.innerHTML = "";
+    STEPS.forEach((step, i) => {
+      const el = document.createElement("div");
+      el.className = "step";
+      el.dataset.index = String(i);
+      el.innerHTML = '<span class="n">' + (i + 1) + "</span><span><b>" + step.title + "</b>" + step.desc + "</span>";
+      stepsBox.appendChild(el);
+    });
+  }
+
+  function setActive(i) {
+    stepsBox.querySelectorAll(".step").forEach((el) => {
+      el.classList.toggle("active", Number(el.dataset.index) === i);
+    });
+    stepTitle.textContent = "шаг " + (i + 1) + " / " + STEPS.length;
+  }
+
+  function setState(state) {
+    stateBadge.className = "badge " + state;
+    stateText.textContent = state.toUpperCase();
+  }
+
+  function setMoney(a, b, cls) {
+    balA.textContent = a.toLocaleString("ru-RU");
+    balB.textContent = b.toLocaleString("ru-RU");
+    if (!cls) return;
+    for (const el of [balA, balB]) {
+      el.classList.remove("up", "down", "flash");
+      void el.offsetWidth;
+      el.classList.add(cls, "flash");
+    }
+    moneyNote.innerHTML = cls === "down"
+      ? "Ставки списаны: банк <b>200 💰</b> ждёт победителя."
+      : "Победитель получил банк: <b>+200 💰</b> одной транзакцией.";
+  }
+
+  function addLog(text, kind) {
+    const el = document.createElement("div");
+    el.className = "log-line" + (kind ? " " + kind : "");
+    el.textContent = "› " + text;
+    logBox.prepend(el);
+    while (logBox.children.length > 5) logBox.lastElementChild.remove();
+  }
+
+  function setCode(text) {
+    codeBox.textContent = text;
+  }
+
+  async function movePacket(step) {
+    lanes.forEach((lane, i) => lane.classList.toggle("active", i === step.from || i === step.to));
+
+    const packet = document.createElement("div");
+    packet.className = "packet " + (step.type === "db" ? "db" : step.type === "response" ? "response" : "");
+    packet.textContent = step.msg;
+    packet.style.left = laneCenter(step.from) + "%";
+    packet.style.top = "96px";
+    stage.appendChild(packet);
+
+    // force reflow so the transition starts from the source lane
+    void packet.offsetWidth;
+    packet.classList.add("show");
+    await sleep(60);
+    packet.style.left = laneCenter(step.to) + "%";
+
+    await sleep(620);
+    packet.classList.remove("show");
+    setTimeout(() => packet.remove(), 400);
+  }
+
+  async function playStep(step, index, myRun) {
+    if (myRun !== runId) return;
+    setActive(index);
+    if (step.state) setState(step.state);
+    setCode(step.code.replaceAll("\\\\n", "\n"));
+    await movePacket(step);
+    if (myRun !== runId) return;
+
+    if (step.log) addLog(step.log, step.state === "finished" ? "ok" : "");
+    if (step.money) {
+      setMoney(step.money.a, step.money.b, step.money.cls);
+      addLog(step.money.cls === "down" ? "transactions: ставки списаны" : "transactions: выигрыш зачислен", "money");
+    }
+    await sleep(340);
+  }
+
+  async function play() {
+    const myRun = ++runId;
+    logBox.innerHTML = "";
+    setMoney(1000, 1000);
+    setState("waiting");
+    moneyNote.innerHTML = "Ставки ещё не списаны — комната в статусе <b>waiting</b>.";
+
+    for (let i = 0; i < STEPS.length; i++) {
+      while (paused && myRun === runId) await sleep(120);
+      if (myRun !== runId) return;
+      await playStep(STEPS[i], i, myRun);
+      await sleep(260);
+    }
+
+    // финальная пауза и повтор
+    await sleep(2400);
+    if (myRun === runId) play();
+  }
+
+  pauseBtn.addEventListener("click", () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? "▶ Продолжить" : "⏸ Пауза";
+  });
+  restartBtn.addEventListener("click", () => {
+    paused = false;
+    pauseBtn.textContent = "⏸ Пауза";
+    play();
+  });
+  speedBtn.addEventListener("click", () => {
+    speed = speed === 1 ? 1.8 : 1;
+    speedBtn.textContent = speed === 1 ? "⚡ 1×" : "⚡ 1.8×";
+  });
+
+  renderSteps();
+  play();
+})();
+</script>
+</body>
+</html>

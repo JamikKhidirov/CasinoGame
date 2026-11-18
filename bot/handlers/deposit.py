@@ -26,6 +26,9 @@ async def cmd_deposit(msg: Message, state: FSMContext):
 @router.message(F.text == BTN_DEPOSIT)
 async def deposit_start(msg: Message, state: FSMContext):
     await state.clear()
+    if not config.payments_enabled():
+        await msg.answer(config.FUN_MODE_MESSAGE, reply_markup=main_kb())
+        return
     ensure_user(msg.from_user.id, msg.from_user.username, msg.from_user.first_name)
     await state.set_state(Deposit.amount)
     await msg.answer(
@@ -42,6 +45,10 @@ async def deposit_amount(msg: Message, state: FSMContext):
     text = (msg.text or "").strip()
     if not text.isdigit():
         await msg.answer("Введите сумму числом:")
+        return
+    if not config.payments_enabled():
+        await state.clear()
+        await msg.answer(config.FUN_MODE_MESSAGE, reply_markup=main_kb())
         return
     amount = int(text)
     if amount < DEPOSIT_MIN:

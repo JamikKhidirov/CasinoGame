@@ -1,0 +1,71 @@
+# ============================================
+#  🎰 Casino Game — production-стек для VPS
+#  Приложение + Caddy (HTTPS, WebSocket, автопродление сертификата)
+#
+#  Запуск (из корня репозитория):
+#    docker compose -f docker-compose.vps.yml up -d --build
+#
+#  Порт 3000 наружу НЕ публикуется: сайт доступен только через Caddy.
+#  Значение DOMAIN берётся из .env (см. deploy/VPS.md).
+# ============================================
+name: casino
+
+services:
+  casino:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: casino-game:latest
+    container_name: casino-game
+    env_file:
+      - .env
+    restart: unless-stopped
+    init: true
+    expose:
+      - "3000"
+    volumes:
+      - casino_data:/app/data
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    networks:
+      - casino_net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: casino-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      # casino.example.com  -> автоматический HTTPS
+      # http://203.0.113.10 -> без HTTPS (только для проверки в браузере)
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      casino:
+        condition: service_healthy
+    networks:
+      - casino_net
+
+networks:
+  casino_net:
+    name: casino_net
+
+volumes:
+  # То же имя, что и в docker-compose.yml: база не теряется при переходе на VPS-стек
+  casino_data:
+    name: casino_game_data
+  caddy_data:
+    name: casino_caddy_data
+  caddy_config:
+    name: casino_caddy_config

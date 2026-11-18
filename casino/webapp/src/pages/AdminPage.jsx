@@ -18,7 +18,7 @@ const TABS = [
   ["deposits", "💳 Донаты"],
   ["withdrawals", "💸 Выводы"],
   ["transactions", "🧾 Операции"],
-  ["settings", "⚙️ Реквизиты"],
+  ["settings", "⚙️ Настройки"],
 ];
 
 export default function AdminPage() {
@@ -299,6 +299,10 @@ function Overview({ onError, notify }) {
             <strong className={data.pendingWithdrawals ? "green" : ""}>
               {fmt(data.pendingWithdrawals)}
             </strong>
+          </div>
+          <div className="stat-box">
+            <span className="muted small">Режим</span>
+            <strong>{data.mode === "fun" ? "🎲 Развлечение" : "💼 Бизнес"}</strong>
           </div>
         </div>
       </section>
@@ -603,6 +607,16 @@ function Withdrawals({ onError, notify }) {
     }
   };
 
+  const copy = async (value) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      notify("Реквизиты скопированы", "success");
+    } catch {
+      notify(value, "info");
+    }
+  };
+
   return (
     <section className="card">
       <div className="section-title">
@@ -615,7 +629,25 @@ function Withdrawals({ onError, notify }) {
             <li key={row.id}>
               <span>
                 #{row.id} · {row.name || row.user_id}
-                <span className="muted small"> · {fmtDate(row.created_at)}</span>
+                <span className="muted small">
+                  {" "}
+                  · {fmtDate(row.created_at)} · {row.source === "site" ? "сайт" : "бот"}
+                </span>
+                <span className="payout-line">
+                  {row.payout_method === "account" ? "🏦 Счёт" : "💳 Карта"}:{" "}
+                  <strong className="mono">{row.payout_target || "не указано"}</strong>
+                  {row.payout_name ? ` · ${row.payout_name}` : ""}
+                  {row.payout_bank ? ` · ${row.payout_bank}` : ""}
+                  {row.payout_target ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-small"
+                      onClick={() => copy(row.payout_target)}
+                    >
+                      Копировать
+                    </button>
+                  ) : null}
+                </span>
               </span>
               <span className="inline">
                 <strong>{fmt(row.amount)} 💰</strong>
@@ -695,17 +727,29 @@ function Transactions({ onError }) {
 }
 
 function Settings({ onError, notify }) {
-  const [form, setForm] = useState({ cardType: "", cardNumber: "", cardName: "", note: "" });
+  const { refreshMode } = useApp();
+  const [form, setForm] = useState({
+    mode: "business",
+    cardType: "",
+    cardNumber: "",
+    cardName: "",
+    note: "",
+    withdrawMin: 1000,
+    withdrawNote: "",
+  });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const data = await api.admin("/api/admin/settings");
       setForm({
+        mode: data.mode === "fun" ? "fun" : "business",
         cardType: data.cardType || "",
         cardNumber: data.cardNumber || "",
         cardName: data.cardName || "",
         note: data.note || "",
+        withdrawMin: data.withdrawMin || 1000,
+        withdrawNote: data.withdrawNote || "",
       });
     } catch (err) {
       onError(err);
@@ -721,7 +765,13 @@ function Settings({ onError, notify }) {
     setBusy(true);
     try {
       await api.admin("/api/admin/settings", { method: "PUT", body: form });
-      notify("Реквизиты сохранены — их видно на странице доната", "success");
+      await refreshMode();
+      notify(
+        form.mode === "fun"
+          ? "Режим «Развлечение» включён: донаты и выводы отключены"
+          : "Режим «Бизнес» включён: донаты и выводы доступны",
+        "success"
+      );
     } catch (err) {
       onError(err);
     } finally {
@@ -734,9 +784,34 @@ function Settings({ onError, notify }) {
   return (
     <section className="card">
       <div className="section-title">
-        <h2>⚙️ Реквизиты для доната</h2>
+        <h2>⚙️ Режим и реквизиты</h2>
       </div>
       <form className="stack" onSubmit={save}>
+        <div className="mode-box">
+          <strong>Режим работы сайта</strong>
+          <p className="muted small">
+            «Бизнес» — можно пополнять баланс и выводить деньги. «Развлечение» — только игра
+            ради веселья, донаты и выводы отключены и скрыты у игроков.
+          </p>
+          <div className="segmented">
+            <button
+              type="button"
+              className={form.mode === "business" ? "is-active" : ""}
+              onClick={() => setForm((current) => ({ ...current, mode: "business" }))}
+            >
+              💼 Бизнес
+            </button>
+            <button
+              type="button"
+              className={form.mode === "fun" ? "is-active" : ""}
+              onClick={() => setForm((current) => ({ ...current, mode: "fun" }))}
+            >
+              🎲 Развлечение
+            </button>
+          </div>
+        </div>
+
+        <h3 className="form-subtitle">Реквизиты для пополнения</h3>
         <label className="field">
           <span>Банк / тип карты</span>
           <input className="input" value={form.cardType} onChange={set("cardType")} />
@@ -750,11 +825,28 @@ function Settings({ onError, notify }) {
           <input className="input" value={form.cardName} onChange={set("cardName")} />
         </label>
         <label className="field">
-          <span>Подсказка на странице доната</span>
+          <span>Подсказка на странице пополнения</span>
           <input className="input" value={form.note} onChange={set("note")} />
         </label>
+
+        <h3 className="form-subtitle">Вывод средств</h3>
+        <label className="field">
+          <span>Минимальная сумма вывода, 💰</span>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            value={form.withdrawMin}
+            onChange={set("withdrawMin")}
+          />
+        </label>
+        <label className="field">
+          <span>Подсказка при выводе (карта или счёт)</span>
+          <input className="input" value={form.withdrawNote} onChange={set("withdrawNote")} />
+        </label>
+
         <button type="submit" className="btn btn-primary" disabled={busy}>
-          {busy ? <span className="spinner" /> : "Сохранить"}
+          {busy ? <span className="spinner" /> : "Сохранить настройки"}
         </button>
       </form>
     </section>

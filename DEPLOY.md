@@ -12,6 +12,7 @@
 <a href="README.md"><img alt="README" src="https://img.shields.io/badge/📖_README-обзор-3b82f6?style=for-the-badge"/></a>
 <a href="ARCHITECTURE.md"><img alt="Architecture" src="https://img.shields.io/badge/🏗_ARCHITECTURE-архитектура-8b5cf6?style=for-the-badge"/></a>
 <a href="DEPLOY.md"><img alt="Deploy" src="https://img.shields.io/badge/📦_DEPLOY-развёртывание-10b981?style=for-the-badge"/></a>
+<a href="deploy/VPS.md"><img alt="VPS" src="https://img.shields.io/badge/🚀_VPS-пошагово-14b8a6?style=for-the-badge"/></a>
 <a href="API.md"><img alt="API" src="https://img.shields.io/badge/🔗_API-справочник-f59e0b?style=for-the-badge"/></a>
 <a href="BACKEND.md"><img alt="Backend" src="https://img.shields.io/badge/⚙️_BACKEND-онлайн--игра-0ea5e9?style=for-the-badge"/></a>
 
@@ -21,6 +22,10 @@
 
 Один Docker-контейнер запускает **Telegram-бота**, **веб-сервер игры** и **SQLite**.  
 Инструкция рассчитана на сервер с Linux, но команды работают и на Windows/macOS с Docker Desktop.
+
+> 🌍 **Хостинг на своём VPS с HTTPS:** используйте production-стек
+> `docker-compose.vps.yml` + Caddy и пошаговую инструкцию
+> **[deploy/VPS.md](deploy/VPS.md)**. Ниже — базовый запуск и детали.
 
 ---
 
@@ -137,6 +142,7 @@ ADMIN_PASSWORD=change_me
 | `ADMIN_PASSWORD_LOGIN` | `1` | `0` — полностью отключить вход по паролю |
 | `ADMIN_PANEL_ENABLED` | `1` | `0` — закрыть веб-админку для всех |
 | `WEB_URL` | `http://localhost:3000` | публичный адрес сайта для кнопок бота |
+| `DOMAIN` | — | домен для `docker-compose.vps.yml`; Caddy выпустит HTTPS. Можно `IP-через-дефисы.sslip.io` |
 | `PORT` | `3000` | порт веб-сервера внутри контейнера |
 | `CORS_ORIGIN` | `*` | разрешённые origin для Socket.io |
 | `DB_PATH` | `/app/data/casino.db` | путь к SQLite (в Docker задан в Dockerfile) |
@@ -151,7 +157,8 @@ ADMIN_PASSWORD=change_me
 | `RESULT_MSG_TTL` | `15` | удаление результата игры в боте |
 | `BANNER_CHECK_INTERVAL` | `30` | период проверки авто-рассылок |
 | `WITHDRAW_MIN` | `1000` | минимальная сумма вывода |
-| `WITHDRAW_NOTE` | — | текст способа выплаты |
+| `WITHDRAW_NOTE` | «Выплата на карту или счёт…» | подсказка игроку при выводе |
+| `APP_MODE` | `business` | `business` — донаты/пополнения/выводы включены; `fun` — только игра |
 | `DONATE_CARD_TYPE` / `DONATE_CARD_NUMBER` / `DONATE_CARD_NAME` | — | реквизиты для донатов |
 | `POINTS_MIN_BET` / `POINTS_MAX_BET` | `10` / `100000` | лимиты ставок в очках ⭐ |
 | `POINTS_BUY_RATE` | `150` | курс 100 💰 → ⭐ |
@@ -161,6 +168,21 @@ ADMIN_PASSWORD=change_me
 
 > Настройки экономики можно менять и из Telegram-админки бота (`/admin → Настройки`).  
 > Веб-сервер читает `START_BALANCE`, `MIN_BET`, `MAX_BET`, `COMMISSION_PERCENT`, `MOVE_TIMEOUT` из `.env`.
+
+### 🎛 Режим работы и касса
+
+`APP_MODE` задаёт, работают ли деньги:
+
+- `business` — пополнения, донаты и выводы доступны;
+- `fun` — только игра ради веселья, денежные операции отключены на сервере.
+
+Текущий режим переключается в веб-админке: **`/admin` → Настройки → Режим работы**.
+Значение хранится в таблице `settings` и имеет приоритет над `.env`, поэтому
+после первого переключения правки `APP_MODE` в `.env` не нужны — меняйте режим
+из панели, он применяется сразу и к сайту, и к боту без перезапуска.
+
+Реквизиты пополнения и лимит вывода тоже редактируются в `/admin → Настройки`
+и сохраняются в SQLite (`DONATE_CARD_*`, `WITHDRAW_MIN`, `WITHDRAW_NOTE`).
 
 ---
 
@@ -182,6 +204,38 @@ ADMIN_PASSWORD=change_me
 git pull
 docker compose up -d --build
 ```
+
+---
+
+## 🚀 Деплой на свой VPS (HTTPS + Caddy)
+
+Для постоянного хостинга используйте production-стек `docker-compose.vps.yml`:
+приложение не публикует порт `3000`, а Caddy слушает `80/443`, сам получает
+сертификат Let's Encrypt и проксирует HTTP API и Socket.io (WebSocket).
+
+```bash
+git clone https://github.com/JamikKhidirov/CasinoGame.git
+cd CasinoGame
+sudo bash deploy/install.sh
+```
+
+Скрипт установит Docker, создаст `.env`, спросит `BOT_TOKEN`, `ADMIN_IDS`,
+пароль и домен, откроет порты в firewall и запустит стек. Backup:
+
+```bash
+sudo bash deploy/backup.sh
+```
+
+| Файл | Назначение |
+|------|------------|
+| `docker-compose.vps.yml` | приложение + Caddy, тома для базы и сертификатов |
+| `deploy/Caddyfile` | reverse proxy, HTTPS, WebSocket, gzip/zstd |
+| `deploy/install.sh` | установка Docker и первичная настройка |
+| `deploy/backup.sh` | целостный backup SQLite + ротация копий |
+| `deploy/VPS.md` | подробная пошаговая инструкция |
+
+📚 DNS, `sslip.io` без домена, firewall, Telegram Mini App, обновление,
+восстановление базы и troubleshooting: **[deploy/VPS.md](deploy/VPS.md)**.
 
 ---
 
@@ -211,7 +265,29 @@ run:
 
 База лежит в именованном томе `casino_game_data`.
 
-### Сделать backup
+### Скрипт (рекомендуется)
+
+```bash
+cd /opt/casino    # папка с репозиторием
+sudo bash deploy/backup.sh
+
+# свой каталог и срок хранения
+sudo BACKUP_DIR=/mnt/backups KEEP=30 bash deploy/backup.sh
+```
+
+Скрипт делает **целостную** копию через SQLite backup API на работающем
+контейнере, сжимает её в `backups/casino-YYYYMMDD-HHMMSS.db.gz` и удаляет
+копии старше `KEEP` дней (по умолчанию 14).
+
+Ежедневный backup через cron:
+
+```cron
+0 3 * * * /bin/bash /opt/casino/deploy/backup.sh >> /var/log/casino-backup.log 2>&1
+```
+
+Полная инструкция по восстановлению: [deploy/VPS.md#backup-и-восстановление](deploy/VPS.md#backup-и-восстановление).
+
+### Вручную через docker
 
 ```bash
 docker compose exec casino sh -c \
@@ -243,7 +319,12 @@ docker compose start
 
 Telegram открывает Mini App только по **HTTPS** на публичном домене. `localhost` подойдёт для разработки, но не для реального Telegram.
 
-Вариант с Nginx + Let's Encrypt:
+В production-стеке `docker-compose.vps.yml` HTTPS настраивает **Caddy**
+автоматически — отдельный nginx не нужен. Достаточно указать `DOMAIN` в `.env`
+и выполнить `sudo bash deploy/install.sh`. Подробности:
+[deploy/VPS.md](deploy/VPS.md).
+
+Если вы используете обычный `docker-compose.yml` за своим nginx, минимальный конфиг:
 
 ```nginx
 server {
@@ -324,6 +405,26 @@ docker compose up -d
 cd casino/webapp && npm install && npm run build
 ```
 
+### Не работают пополнение и вывод
+
+Скорее всего включён режим «Развлечение». Проверьте:
+
+- в админке `/admin → Настройки → Режим работы` должно быть «Бизнес»;
+- либо в базе: `SELECT value FROM settings WHERE key='APP_MODE'` — `business`;
+- `APP_MODE=fun` в `.env` действует только до первого сохранения режима из панели.
+
+В режиме `fun` сервер намеренно отвечает `403` на `/api/donate` и `/api/withdraw`,
+а бот скрывает денежные кнопки.
+
+### Комнаты висят в списке
+
+- Пустые комнаты не показываются в `/api/rooms` и удаляются фоновой очисткой
+  в течение минуты.
+- Если видите старую комнату после обновления кода — перезапустите контейнер:
+  `docker compose restart`.
+- Убедитесь, что браузер не держит вкладку игры открытой: при уходе со страницы
+  клиент отправляет `leaveRoom`.
+
 ### Ошибка сборки `node-sqlite3`
 
 В Dockerfile уже установлены `build-essential` и `python3` для компиляции нативного модуля. Если ошибка осталась, проверьте интернет и место на диске, затем:
@@ -352,8 +453,10 @@ docker compose build --no-cache
 |---|------|
 | 🔒 | `.env` исключён из Docker-образа через `.dockerignore` |
 | 👤 | Контейнер работает от непривилегированного пользователя `bot` (uid 1000) |
-| 🔑 | Админ-панель защищена паролем `ADMIN_PASSWORD` |
-| 🚦 | Встроенный rate limit на вход в админку и игровые действия |
+| 🔑 | Вход в админку — одноразовый код из бота для `ADMIN_IDS`; пароль только если задан явно |
+| 💸 | Вывод замораживает сумму до подтверждения админом |
+| 🎛 | В режиме `fun` денежные операции запрещены на сервере (`403`) |
+| 🚦 | Встроенный rate limit на вход, донаты, выводы и игровые действия |
 | 🧱 | CSP настроен под Telegram WebApp и inline-скрипты |
 | 🙈 | Не публикуйте `.env` и backup-файлы базы |
 
@@ -361,7 +464,7 @@ docker compose build --no-cache
 
 <div align="center">
 
-[📖 README](README.md) · [🏗 ARCHITECTURE](ARCHITECTURE.md) · [🔗 API](API.md)
+[📖 README](README.md) · [🏗 ARCHITECTURE](ARCHITECTURE.md) · [🎓 BACKEND_TUTORIAL](BACKEND_TUTORIAL.md) · [🔗 API](API.md)
 
 <a href="#top">⬆ Наверх</a>
 

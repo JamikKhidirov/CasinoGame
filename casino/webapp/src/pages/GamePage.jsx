@@ -182,6 +182,9 @@ export default function GamePage() {
 
     return () => {
       alive = false;
+      // Уходим из комнаты при переходе на другую страницу, иначе она
+      // останется висеть в списке активных, пока не сработает таймаут.
+      socket.emit("leaveRoom");
       socket.off("roomUpdated", onRoom);
       socket.off("balance", onBalance);
       socket.off("joined", onJoined);

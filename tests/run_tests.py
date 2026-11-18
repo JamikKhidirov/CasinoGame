@@ -101,9 +101,17 @@ async def test_db():
     check("перевод без денег", not database.transfer(1, 2, 10 ** 9))
     check("баланс отправителя", database.get_balance(1) == b1 - 100)
 
-    w = database.create_withdrawal(2, 300)
+    w = database.create_withdrawal(
+        2, 300,
+        payout_method="card", payout_target="2202200000001111",
+        payout_name="Иван Иванов", payout_bank="Сбербанк", source="bot",
+    )
     check("заявка на вывод", w > 0)
-    check("заявка в списке pending", any(x["id"] == w for x in database.get_pending_withdrawals()))
+    pending_w = [x for x in database.get_pending_withdrawals() if x["id"] == w]
+    check("заявка в списке pending", bool(pending_w))
+    check("реквизиты вывода сохранены",
+          bool(pending_w) and pending_w[0]["payout_target"] == "2202200000001111"
+          and pending_w[0]["payout_name"] == "Иван Иванов")
     before = database.get_balance(2)
     database.change_balance(2, -300, "hold", f"Заявка #{w}")
     check("средства заморожены", database.get_balance(2) == before - 300)
@@ -154,6 +162,12 @@ async def test_db():
     check("строковая настройка применена", cfgx.DONATE_CARD_NUMBER == "2202202045612345")
     check("настройка в SETTINGS строка", isinstance(cfgx.SETTINGS["DONATE_CARD_NUMBER"][1], str))
     database.set_setting("DONATE_CARD_NUMBER", cfgx.DONATE_CARD_NUMBER)
+
+    # режим «Бизнес/Развлечение» читается из БД без перезапуска
+    database.set_setting("APP_MODE", "fun")
+    check("режим fun применён", cfgx.get_app_mode() == "fun" and not cfgx.payments_enabled())
+    database.set_setting("APP_MODE", "business")
+    check("режим business применён", cfgx.get_app_mode() == "business" and cfgx.payments_enabled())
 
     database.record_game(1, "dice", 100, "win", 100, "player")
     database.record_game(1, "dice", 100, "win", 100, "bot")

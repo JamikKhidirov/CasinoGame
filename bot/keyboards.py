@@ -20,18 +20,29 @@ BTN_MY_ID = "🆔 Мой ID"
 
 
 def main_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=BTN_CREATE), KeyboardButton(text=BTN_VSBOT)],
-            [KeyboardButton(text=BTN_BALANCE), KeyboardButton(text=BTN_HISTORY)],
-            [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_TOP)],
+    # В режиме «Развлечение» денежные кнопки не показываем — играем ради веселья.
+    try:
+        from config import payments_enabled
+        business = payments_enabled()
+    except Exception:
+        business = True
+
+    rows = [
+        [KeyboardButton(text=BTN_CREATE), KeyboardButton(text=BTN_VSBOT)],
+        [KeyboardButton(text=BTN_BALANCE), KeyboardButton(text=BTN_HISTORY)],
+        [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_TOP)],
+    ]
+    if business:
+        rows.extend([
             [KeyboardButton(text=BTN_WITHDRAW), KeyboardButton(text=BTN_TRANSFER)],
             [KeyboardButton(text=BTN_DONATE), KeyboardButton(text=BTN_PROMO)],
             [KeyboardButton(text=BTN_DEPOSIT), KeyboardButton(text=BTN_CONVERT)],
-            [KeyboardButton(text=BTN_SITE), KeyboardButton(text=BTN_MY_ID)],
-        ],
-        resize_keyboard=True,
-    )
+        ])
+    else:
+        rows.append([KeyboardButton(text=BTN_PROMO), KeyboardButton(text=BTN_CONVERT)])
+    rows.append([KeyboardButton(text=BTN_SITE), KeyboardButton(text=BTN_MY_ID)])
+
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def games_kb(vs_bot: bool) -> InlineKeyboardMarkup:

@@ -3,6 +3,7 @@ from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+import config
 from database import (
     claim_daily,
     ensure_user,
@@ -78,6 +79,14 @@ async def cmd_start(msg: Message, state: FSMContext, command: CommandObject):
                 f"Вы получите бонус, когда он сделает первую ставку.",
             )
 
+    if config.payments_enabled():
+        money_lines = (
+            "💸 Вывод на карту или счёт и переводы\n"
+            "💝 Донат и 🎁 промокоды\n"
+        )
+    else:
+        money_lines = "🎁 Промокоды\n"
+
     await msg.answer(
         f"🎰 <b>Добро пожаловать в Казино!</b>\n\n"
         f"Ваш баланс: <b>{fmt(user['balance'])}</b> 💰\n"
@@ -87,8 +96,7 @@ async def cmd_start(msg: Message, state: FSMContext, command: CommandObject):
         f"🎮 <b>Создать комнату</b> — игра 1 на 1 с друзьями (лучше в группе)\n"
         f"🔄 <b>Обмен очков</b> — ⭐ ↔ 💰 по выгодному курсу\n"
         f"📊 Моя статистика и топ игроков\n"
-        f"💸 Вывод средств (Telegram Premium) и переводы\n"
-        f"💝 Донат и 🎁 промокоды\n"
+        f"{money_lines}"
         f"🌐 <b>Войти на сайт</b> — /site: бот пришлёт код для входа в веб-казино\n"
         f"🎁 <b>/daily</b> — ежедневный бонус\n"
         f"👥 <b>Пригласи друга</b> — получи бонус за каждого",
@@ -99,6 +107,18 @@ async def cmd_start(msg: Message, state: FSMContext, command: CommandObject):
 @router.message(Command("help"))
 async def cmd_help(msg: Message, state: FSMContext):
     await state.clear()
+    if config.payments_enabled():
+        money_block = (
+            "💸 <b>Вывод</b> — накопите минимум и запросите вывод на карту или счёт. "
+            "Реквизиты увидит администратор.\n\n"
+            "💳 <b>Пополнение</b> — /deposit: оставьте заявку на пополнение, админ подтвердит.\n\n"
+            "📤 <b>Перевод</b> — отправляйте баланс друзьям.\n\n"
+        )
+    else:
+        money_block = (
+            "🎲 Сейчас режим «Развлечение»: играем ради веселья, "
+            "пополнения и выводы отключены.\n\n"
+        )
     await msg.answer(
         f"❓ <b>Помощь</b>\n\n"
         f"🎮 <b>Создать комнату</b> — выберите игру, укажите ставку. Комната живёт 15 сек, "
@@ -109,9 +129,7 @@ async def cmd_help(msg: Message, state: FSMContext):
         f"кнопку «Бросить». Если не ходите 30 сек — бот сделает ход за вас.</blockquote>\n\n"
         f"🔄 <b>Обмен очков</b> — /convert: конвертируйте 💰 в ⭐ по выгодному курсу "
         f"(1 💰 = 1.5 ⭐) или обратно.\n\n"
-        f"💸 <b>Вывод</b> — накопите минимум и запросите вывод. Выплаты: Telegram Premium.\n\n"
-        f"💳 <b>Пополнение</b> — /deposit: оставьте заявку на пополнение, админ подтвердит.\n\n"
-        f"📤 <b>Перевод</b> — отправляйте баланс друзьям.\n\n"
+        f"{money_block}"
         f"🏆 <b>Топы</b> — /top (баланс) и /topbot (очки ⭐).\n\n"
         f"🎁 <b>Промокод</b> — активируйте бонусы через /promo.",
         reply_markup=main_kb(),

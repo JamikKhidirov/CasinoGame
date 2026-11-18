@@ -176,7 +176,12 @@ async def admin_set_value(msg: Message, state: FSMContext):
     key = data["key"]
     label, default = config.SETTINGS[key]
     if isinstance(default, str):
-        value = text
+        value = text.strip()
+        if key == "APP_MODE":
+            value = value.lower()
+            if value not in ("business", "fun"):
+                await msg.answer("Введите business (бизнес) или fun (развлечение).")
+                return
     else:
         if not text.lstrip("-").isdigit():
             await msg.answer("Введите целое число!")
@@ -311,6 +316,18 @@ async def admin_deposit_amount(msg: Message, state: FSMContext):
 
 # ---------- Заявки на вывод ----------
 
+def _withdraw_details(w: dict) -> str:
+    method = "🏦 Счёт" if w.get("payout_method") == "account" else "💳 Карта"
+    lines = [f"Способ: <b>{method}</b>"]
+    if w.get("payout_target"):
+        lines.append(f"Реквизиты: <code>{esc(w['payout_target'])}</code>")
+    if w.get("payout_name"):
+        lines.append(f"Получатель: <b>{esc(w['payout_name'])}</b>")
+    if w.get("payout_bank"):
+        lines.append(f"Банк: <b>{esc(w['payout_bank'])}</b>")
+    return "\n".join(lines)
+
+
 @router.callback_query(F.data == "admin:withdrawals")
 async def admin_withdrawals(cb: CallbackQuery):
     if not is_admin(cb.from_user.id):
@@ -337,6 +354,7 @@ async def admin_withdrawals(cb: CallbackQuery):
             f"💸 <b>Заявка #{w['id']}</b>\n"
             f"Пользователь: {name}\n"
             f"Сумма: <b>{fmt(w['amount'])}</b>\n"
+            f"{_withdraw_details(w)}\n"
             f"Дата: {fmt_ts(w['created_at'])}",
             reply_markup=kb,
         )
@@ -364,7 +382,7 @@ async def admin_wd_ok(cb: CallbackQuery):
         cb,
         "approved",
         "✅ Вывод подтверждён.",
-        "✅ Ваша заявка на вывод подтверждена! Выплата в пути. 💎 Telegram Premium",
+        "✅ Ваша заявка на вывод подтверждена! Деньги отправлены на указанные вами реквизиты.",
     )
 
 

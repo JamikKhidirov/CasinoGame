@@ -44,7 +44,8 @@
 
 ### `GET /api/rooms`
 
-Список активных комнат **без скрытых карт**.
+Список активных комнат **без скрытых карт**. Попадают только комнаты, где есть
+хотя бы один онлайн-игрок: пустые и завершённые комнаты сюда не отдаются.
 
 ```json
 [
@@ -62,7 +63,8 @@
 ]
 ```
 
-`status` может быть `waiting`, `playing` или `finished`.
+`status` может быть `waiting`, `playing` или `finished`, но `finished` в списке
+практически не встречается — такие комнаты удаляются фоновой очисткой.
 
 ---
 
@@ -124,7 +126,195 @@
 
 ---
 
-## 🔌 Socket.io
+## 🔐 Вход и профиль
+
+Все защищённые запросы передают токен в заголовке:
+
+```
+Authorization: Bearer <token>
+```
+
+Игрок получает токен по одноразовому коду из бота (`/site`), админ — по коду
+из `/admin` в боте.
+
+### `POST /api/auth/login`
+
+```json
+{ "code": "AB12CD34" }
+```
+
+Ответ:
+
+```json
+{
+  "ok": true,
+  "token": "64-символьный hex",
+  "expiresAt": 1765281600,
+  "user": { "id": 123456789, "balance": 1000, "points": 2000 }
+}
+```
+
+Ошибки: `400` нет кода, `403` админский код на странице игрока, `404` код не
+найден, `410` код использован или истёк, `409` код ещё не подтверждён, `429`
+слишком много попыток.
+
+### `GET /api/auth/me`
+
+Возвращает `{ ok: true, user }` для действующей сессии; `401` без токена.
+
+### `POST /api/auth/logout`
+
+Удаляет сессию. Тело не нужно.
+
+### `GET /api/leaderboard?kind=balance|points&limit=10`
+
+Топ игроков: `{ kind, rows: [{ id, username, first_name, balance, points }] }`.
+
+### `GET /api/user/:id/stats`
+
+Агрегированная игровая статистика: `totals`, `byGame`, `recent`.
+
+### `GET /api/me/transactions`
+
+Последние 30 операций игрока: `{ rows: [...] }`. Требует токен.
+
+---
+
+## 🎛 Режим и касса
+
+### `GET /api/mode`
+
+Публичный режим работы сайта (без токена):
+
+```json
+{
+  "mode": "business",
+  "business": true,
+  "paymentsEnabled": true,
+  "title": "Бизнес"
+}
+```
+
+`mode` = `business` или `fun`. В `fun` пополнения и выводы отключены на сервере.
+
+### `GET /api/donate/info`
+
+Реквизиты пополнения, лимиты, режим и последние заявки игрока:
+
+```json
+{
+  "cardType": "Сбербанк",
+  "cardNumber": "2202 2000 0000 0000",
+  "cardName": "Иванов Иван",
+  "min": 100,
+  "max": 100000,
+  "note": "Переведите сумму на карту…",
+  "mode": "business",
+  "paymentsEnabled": true,
+  "withdrawMin": 1000,
+  "withdrawNote": "Выплата на карту или счёт…",
+  "deposits": [],
+  "withdrawals": [],
+  "loggedIn": true
+}
+```
+
+### `POST /api/donate`
+
+```json
+{ "amount": 500, "comment": "последние 4 цифры 1111" }
+```
+
+Создаёт заявку `deposits` со статусом `pending` и `source='site'`.
+Ответ: `{ ok: true, id, amount, status: "pending" }`.
+В режиме `fun` — `403`.
+
+### `GET /api/withdraw/info`
+
+`{ withdrawMin, withdrawNote, methods, mode, paymentsEnabled, withdrawals, loggedIn }`.
+
+### `POST /api/withdraw`
+
+```json
+{
+  "amount": 1000,
+  "method": "card",
+  "target": "2202 2000 0000 1111",
+  "holder": "Иван Иванов",
+  "bank": "Сбербанк"
+}
+```
+
+Правила:
+
+- `method`: `card` (16–19 цифр) или `account` (6–34 буквы/цифры);
+- сумма ≥ `WITHDRAW_MIN` и не больше баланса;
+- `holder` — минимум 2 символа.
+
+Сумма **сразу замораживается** (`hold`). Ответ:
+
+```json
+{ "ok": true, "id": 12, "amount": 1000, "status": "pending", "balance": 750 }
+```
+
+Ошибки: `400` неверные данные, `403` режим `fun`, `429` слишком много заявок.
+
+---
+
+## 🛠 Админ-API
+
+Все маршруты требуют админский токен (`Authorization: Bearer <admin token>`).
+Доступ проверяется по `ADMIN_PANEL_ENABLED`, сроку сессии и `ADMIN_IDS` на
+каждом запросе.
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `GET` | `/api/admin/status` | доступность панели и способы входа |
+| `POST` | `/api/admin/login` | вход по коду из бота или паролю |
+| `POST` | `/api/admin/logout` | выход |
+| `GET` | `/api/admin/overview` | сводка: игроки, баланс, комнаты, режим |
+| `GET` | `/api/admin/users?q=&limit=` | поиск игроков |
+| `POST` | `/api/admin/balance` | ручное начисление/списание |
+| `GET` | `/api/admin/deposits?status=` | заявки на пополнение |
+| `POST` | `/api/admin/deposits/:id/resolve` | `{ approve: true\\|false }` |
+| `GET` | `/api/admin/withdrawals?status=` | заявки на вывод с реквизитами |
+| `POST` | `/api/admin/withdrawals/:id/resolve` | `{ approve: true\\|false }` |
+| `GET` | `/api/admin/transactions` | последние операции |
+| `GET` | `/api/admin/settings` | реквизиты, лимиты и режим |
+| `PUT` | `/api/admin/settings` | сохранить реквизиты и `mode` |
+| `POST` | `/api/admin/broadcast` | сообщение всем онлайн-игрокам |
+| `POST` | `/api/admin/close-room` | закрыть комнату с возвратом ставок |
+
+`GET /api/admin/status`:
+
+```json
+{
+  "available": true,
+  "enabled": true,
+  "codeLogin": true,
+  "passwordLogin": true,
+  "adminsConfigured": true
+}
+```
+
+`PUT /api/admin/settings` принимает:
+
+```json
+{
+  "mode": "fun",
+  "cardType": "Сбербанк",
+  "cardNumber": "2202 2000 0000 0000",
+  "cardName": "Иванов Иван",
+  "note": "Подсказка для пополнения",
+  "withdrawMin": 1000,
+  "withdrawNote": "Выплата на карту или счёт"
+}
+```
+
+`mode` валидируется: только `business` или `fun`, иначе `400`.
+
+---
+
 
 Подключение:
 
@@ -152,18 +342,24 @@ sequenceDiagram
 
 | Событие | Данные | Описание |
 |---------|--------|----------|
-| `join` | `{ userId, userName, roomId?, gameType?, bet?, maxPlayers? }` | Войти в комнату или создать новую |
+| `join` | `{ sessionToken?, userId?, userName?, roomId?, gameType?, bet?, maxPlayers? }` | Войти в комнату или создать новую |
 | `startGame` | — | Начать игру (только создатель, минимум 2 игрока) |
 | `addBot` | — | Добавить бота-соперника (только создатель, до начала игры) |
 | `rematch` | — | Перезапустить завершённую игру (только создатель) |
 | `playerAction` | `{ action, cardId? }` | Игровой ход |
-| `leaveRoom` | — | Выйти из комнаты |
-| `adminLogin` | `{ password }` | Вход в админ-панель |
+| `leaveRoom` | — | Выйти из комнаты (пустая комната сразу удаляется) |
+| `adminLogin` | `{ password }` | Устаревший socket-вход: только явно заданный `ADMIN_PASSWORD` |
 | `adminStats` | — | Статистика для админки |
 | `adminTransactions` | — | Последние 50 транзакций |
 | `adminAdjustBalance` | `{ userId, delta, reason? }` | Изменить баланс игрока |
 | `adminCloseRoom` | `{ roomId }` | Закрыть комнату (ставки вернутся) |
 | `adminBroadcast` | `{ message }` | Отправить сообщение всем онлайн-игрокам |
+
+`join` с `sessionToken` игнорирует `userId` из клиента и использует аккаунт из
+сессии — иначе можно было бы играть за чужой кошелёк.
+
+> Основная админка (`/admin`) работает через REST `/api/admin/*`; socket-события
+> `admin*` оставлены для совместимости и требуют явно заданного пароля.
 
 #### Действия `playerAction`
 
@@ -304,11 +500,15 @@ interface Transaction {
 | `web_rooms` | JSON-снимки активных/недавних веб-комнат |
 | `settings` | настройки админа |
 | `promocodes`, `promo_uses` | промокоды |
-| `deposits`, `withdrawals` | заявки |
+| `deposits`, `withdrawals` | заявки на пополнение и вывод (в `withdrawals` — реквизиты, `source`) |
+| `login_codes`, `web_sessions` | одноразовые коды и сессии сайта/админки |
 | `banners`, `banner_sends` | баннеры |
 | `referrals` | рефералы |
 
-Активные комнаты сохраняются после каждого действия. После перезапуска сервер восстанавливает `web_rooms`; игроки могут переподключиться по ссылке `/game?room=КОД`. Полное описание бэкенда — в [BACKEND.md](BACKEND.md).
+Активные комнаты сохраняются после каждого действия. После перезапуска сервер восстанавливает `web_rooms`; игроки могут переподключиться по ссылке `/game?room=КОД`.
+
+Подробное описание бэкенда — [BACKEND.md](BACKEND.md), обучающий разбор с
+анимациями — [BACKEND_TUTORIAL.md](BACKEND_TUTORIAL.md).
 
 ---
 
