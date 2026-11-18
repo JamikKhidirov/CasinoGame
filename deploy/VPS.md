@@ -199,7 +199,7 @@ sudo bash deploy/install.sh
 | `BOT_TOKEN` | токен из `@BotFather` |
 | `ADMIN_IDS` | ваш Telegram ID (число), можно несколько через запятую |
 | Пароль админки | придумайте или нажмите Enter — сгенерируется |
-| `DOMAIN` | `casino.example.com` или `203-0-113-10.sslip.io` |
+| `DOMAIN` | `casino.example.com`, `203-0-113-10.sslip.io` или просто **Enter** — скрипт сам определит IP и возьмёт бесплатный `sslip.io` |
 
 Если `.env` уже существует, скрипт не перезапишет его и спросит только
 недостающие значения.

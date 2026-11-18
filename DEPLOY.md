@@ -220,7 +220,8 @@ sudo bash deploy/install.sh
 ```
 
 Скрипт установит Docker, создаст `.env`, спросит `BOT_TOKEN`, `ADMIN_IDS`,
-пароль и домен, откроет порты в firewall и запустит стек. Backup:
+пароль и домен, откроет порты в firewall и запустит стек. Если домена нет,
+просто нажмите Enter — скрипт возьмёт бесплатный `sslip.io` по IP сервера. Backup:
 
 ```bash
 sudo bash deploy/backup.sh

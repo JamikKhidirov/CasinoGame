@@ -111,6 +111,19 @@ env_has_value() {
 	grep -qE "^[[:space:]]*$1=.+" "$ENV_FILE"
 }
 
+# Публичный IPv4 сервера — нужен для бесплатного домена sslip.io
+detect_public_ip() {
+	local ip=""
+	for url in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com; do
+		ip="$(curl -4 -fsS --max-time 5 "$url" 2>/dev/null | tr -d '[:space:]' || true)"
+		if [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+			echo "$ip"
+			return 0
+		fi
+	done
+	return 1
+}
+
 if ! env_has_value BOT_TOKEN || grep -q '^BOT_TOKEN=123456789:REPLACE' "$ENV_FILE"; then
 	read -rp "Токен бота от @BotFather (BOT_TOKEN): " value
 	[[ -n "$value" ]] || fail "BOT_TOKEN обязателен."
@@ -137,10 +150,14 @@ fi
 if ! env_has_value DOMAIN; then
 	echo
 	echo "Домен должен уже указывать A-записью на IP этого сервера."
-	echo "Нет домена? Используйте sslip.io: 203-0-113-10.sslip.io (замените на IP сервера)."
-	read -rp "Домен (например casino.example.com) или http://IP: " value
+	read -rp "Домен (например casino.example.com) или Enter — бесплатный sslip.io: " value
 	value="${value%/}"
-	[[ -n "$value" ]] || fail "DOMAIN обязателен: Caddy не сможет выпустить сертификат без домена."
+	if [[ -z "$value" ]]; then
+		ip="$(detect_public_ip || true)"
+		[[ -n "$ip" ]] || fail "Не удалось определить публичный IP. Введите домен вручную."
+		value="${ip//./-}.sslip.io"
+		info "Домен не указан — использую бесплатный: $value"
+	fi
 	if [[ "$value" == http://* ]]; then
 		web_url="$value"
 		warn "Выбран режим без HTTPS. Telegram Mini App работать не будет — только проверка в браузере."
